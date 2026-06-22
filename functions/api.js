@@ -1,5 +1,5 @@
 // ================================================================
-// WHALIXIR — Cloudflare Worker + D1 (Moaaei)
+// WHALIXIR — Cloudflare Pages Function + D1 (Moaaei)
 // ================================================================
 
 export async function onRequest(context) {
@@ -21,7 +21,7 @@ export async function onRequest(context) {
 
     // ── Check DB binding ─────────────────────────────────────────
     if (!env.DB) {
-      return json({ error: 'D1 binding "DB" not found. Go to Worker Settings → Bindings → Add → D1 database → Variable name: DB → select Moaaei → Save.' }, 500);
+      return json({ error: 'D1 binding "DB" not found. Go to Pages Settings → Functions → D1 Database Bindings → Add → Variable name: DB → select Moaaei → Save.' }, 500);
     }
 
     try {
@@ -43,9 +43,6 @@ export async function onRequest(context) {
 
       // ══════════════════════════════════════════════════════════
       //  TGJU LIVE RATES
-      //  endpoint: https://api.tgju.org/v1/market/indicator/summary-table-data/{profile}
-      //  مقادیر به ریال → تقسیم بر ۱۰ = تومان
-      //  کریپتو به دلار → ضرب در نرخ دلار
       // ══════════════════════════════════════════════════════════
       if (path === '/api/tgju' && request.method === 'GET') {
 
@@ -92,19 +89,8 @@ export async function onRequest(context) {
             let d;
             try { d = JSON.parse(text); } catch(e) { errors.push(`${code}:badJSON`); return; }
 
-            // tgju formats (various):
-            // 1) d.data.info.today.price
-            // 2) d.p
-            // 3) d.data[last][4]  (OHLCV close)
-            // 4) d.current
-            // 5) d.data.last_trade.price
-            // 6) array of arrays directly: d[last][4]
-
             let raw = 0;
             if (Array.isArray(d?.data) && d.data.length && Array.isArray(d.data[0])) {
-              // فرمت tgju: data[0] = امروز
-              // ستون‌ها: [کمترین, کمترین, بیشترین, قیمت زنده/اعلامی]
-              // ستون ۳ = قیمت لحظه‌ای که tgju.org نمایش می‌دهد
               const row = d.data[0];
               raw = parseFloat(String(row[3]).replace(/,/g,''));
               if (debug) debugInfo[code+'_rows'] = d.data.slice(0,2);
@@ -122,9 +108,9 @@ export async function onRequest(context) {
 
             if (raw > 0) {
               if (isUsd) {
-                result[`_usd_${code}`] = raw; // قیمت دلاری خام، بعداً به تومان تبدیل می‌شود
+                result[`_usd_${code}`] = raw;
               } else if (inRial) {
-                result[code] = Math.round(raw / 10); // ریال → تومان
+                result[code] = Math.round(raw / 10);
               }
             } else {
               errors.push(`${code}:parse0`);
@@ -134,7 +120,6 @@ export async function onRequest(context) {
           }
         }));
 
-        // تبدیل کریپتو (دلاری) به تومان با نرخ دلار به‌دست‌آمده از tgju
         const usdToman = result['USD'] || 0;
         for (const code of ['BTC','ETH','SOL']) {
           const usd = result[`_usd_${code}`];
@@ -197,5 +182,4 @@ export async function onRequest(context) {
     } catch (err) {
       return json({ error: err.message, stack: String(err.stack||'').slice(0,500) }, 500);
     }
-  }
-};
+}
