@@ -1273,32 +1273,7 @@ async function generatePDF(){
   const totalPLT=recT.reduce((s,r)=>s+r.pl,0);
   const totalPLD=recD.reduce((s,r)=>s+r.pl,0);
 
-  // ── لوگوی اپ (SVG برداری — همان استایل داشبورد) ──
-  const logoSVG=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="80" height="80">
-    <defs>
-      <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" style="stop-color:#1e3a8a"/>
-        <stop offset="100%" style="stop-color:#0f172a"/>
-      </linearGradient>
-      <linearGradient id="ln" x1="0%" y1="0%" x2="100%" y2="0%">
-        <stop offset="0%" style="stop-color:#34d399"/>
-        <stop offset="100%" style="stop-color:#4f8cff"/>
-      </linearGradient>
-    </defs>
-    <circle cx="60" cy="60" r="58" fill="url(#bg)" stroke="#3b82f6" stroke-width="2.5"/>
-    <circle cx="60" cy="60" r="54" fill="none" stroke="rgba(79,140,255,0.3)" stroke-width="0.8"/>
-    <!-- نمودار صعودی -->
-    <polyline points="16,82 30,68 42,74 57,52 72,60 88,38 104,28"
-      fill="none" stroke="url(#ln)" stroke-width="4"
-      stroke-linecap="round" stroke-linejoin="round"/>
-    <!-- نقاط -->
-    <circle cx="16" cy="82" r="3.5" fill="#34d399"/>
-    <circle cx="57" cy="52" r="3.5" fill="#4f8cff"/>
-    <circle cx="104" cy="28" r="3.5" fill="#34d399"/>
-    <!-- متن -->
-    <text x="60" y="104" text-anchor="middle" font-family="Arial,sans-serif"
-      font-size="9.5" fill="#93c5fd" font-weight="800" letter-spacing="2">WHALIXIR</text>
-  </svg>`;
+  const logoIMG='<img src="data:image/svg+xml,%3Csvg xmlns%3D%22http%3A//www.w3.org/2000/svg%22 viewBox%3D%220 0 120 120%22%3E%3Cdefs%3E%3ClinearGradient id%3D%22g1%22 x1%3D%220%25%22 y1%3D%220%25%22 x2%3D%22100%25%22 y2%3D%22100%25%22%3E%3Cstop offset%3D%220%25%22 stop-color%3D%22%231e3a8a%22/%3E%3Cstop offset%3D%22100%25%22 stop-color%3D%22%230f172a%22/%3E%3C/linearGradient%3E%3ClinearGradient id%3D%22g2%22 x1%3D%220%25%22 y1%3D%220%25%22 x2%3D%22100%25%22 y2%3D%220%25%22%3E%3Cstop offset%3D%220%25%22 stop-color%3D%22%2334d399%22/%3E%3Cstop offset%3D%22100%25%22 stop-color%3D%22%234f8cff%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx%3D%2260%22 cy%3D%2260%22 r%3D%2258%22 fill%3D%22url(%23g1)%22 stroke%3D%22%233b82f6%22 stroke-width%3D%222.5%22/%3E%3Cpolyline points%3D%2216%2C82 30%2C68 42%2C74 57%2C52 72%2C60 88%2C38 104%2C28%22 fill%3D%22none%22 stroke%3D%22url(%23g2)%22 stroke-width%3D%224%22 stroke-linecap%3D%22round%22 stroke-linejoin%3D%22round%22/%3E%3Ccircle cx%3D%2216%22 cy%3D%2282%22 r%3D%223.5%22 fill%3D%22%2334d399%22/%3E%3Ccircle cx%3D%22104%22 cy%3D%2228%22 r%3D%223.5%22 fill%3D%22%2334d399%22/%3E%3Ctext x%3D%2260%22 y%3D%22104%22 text-anchor%3D%22middle%22 font-family%3D%22Arial%22 font-size%3D%229%22 fill%3D%22%2393c5fd%22 font-weight%3D%22800%22 letter-spacing%3D%222%22%3EWHALIXIR%3C/text%3E%3C/svg%3E" width="80" height="80" style="border-radius:50%"/>';
 
   // ── helper ها ──
   const vc=(v)=>v>=0?'#15803d':'#b91c1c';
@@ -1307,7 +1282,7 @@ async function generatePDF(){
   function row(label,value,color='#334155'){
     return `<tr>
       <td class="rl">${label}</td>
-      <td class="rv" style="color:${color}">${value}</td>
+      <td class="rv" style="color:${color}"><span style="direction:ltr;display:inline-block;unicode-bidi:plaintext">${value}</span></td>
     </tr>`;
   }
   function secHead(icon,title,color='#1e3a8a'){
@@ -1318,7 +1293,7 @@ async function generatePDF(){
     return `<tr style="background:${bg}">${cols.map(c=>`<th style="padding:6px 8px;font-size:11px;color:${color};font-weight:700;border-bottom:2px solid ${color}20;text-align:center">${c}</th>`).join('')}</tr>`;
   }
   function miniTblRow(cells,colors=[]){
-    return `<tr>${cells.map((c,i)=>`<td style="padding:5px 8px;font-size:11px;color:${colors[i]||'#334155'};text-align:center;border-bottom:1px solid #f1f5f9">${c}</td>`).join('')}</tr>`;
+    return `<tr>${cells.map((c,i)=>`<td style="padding:5px 8px;font-size:11px;color:${colors[i]||'#334155'};text-align:center;border-bottom:1px solid #f1f5f9;direction:ltr;unicode-bidi:plaintext">${c}</td>`).join('')}</tr>`;
   }
 
   // جدول TSETMC
@@ -1370,6 +1345,7 @@ body{
   padding:36px 44px 32px;
   font-size:13px;line-height:1.6;
 }
+.num{direction:ltr;display:inline-block;unicode-bidi:plaintext;font-family:'Courier New',monospace,Arial;}
 /* ── هدر ── */
 .hdr{display:flex;align-items:center;gap:20px;padding-bottom:18px;
   border-bottom:3px solid #1e3a8a;margin-bottom:22px;}
@@ -1403,7 +1379,7 @@ table.mini-tbl{width:100%;border-collapse:collapse;}
 
 <!-- هدر با لوگو -->
 <div class="hdr">
-  <div class="hdr-logo">${logoSVG}</div>
+  <div class="hdr-logo">${logoIMG}</div>
   <div class="hdr-brand">
     <h1>WHALIXIR</h1>
     <h2>by Shamsaddin Mollaei — گزارش جامع مالی</h2>
