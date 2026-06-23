@@ -493,12 +493,34 @@ function recordAEDRate(){
     if(hist.length>90) hist=hist.slice(-90);
     localStorage.setItem('wx_aed_hist',JSON.stringify(hist));
     aedRateHistory=hist;
+    // sync به D1
+    api('/aed/history',{method:'POST',body:JSON.stringify({date:today,rate:r})}).catch(()=>{});
   }catch(_){}
 }
 function loadAEDHistory(){
   try{
     aedRateHistory=JSON.parse(localStorage.getItem('wx_aed_hist')||'[]');
   }catch(_){aedRateHistory=[];}
+}
+async function loadAEDSettingsFromDB(){
+  try{
+    const [hist,settings]=await Promise.all([
+      api('/aed/history'),
+      api('/aed/settings')
+    ]);
+    if(Array.isArray(hist)&&hist.length){
+      aedRateHistory=hist.map(h=>({d:h.date,r:h.rate}));
+      localStorage.setItem('wx_aed_hist',JSON.stringify(aedRateHistory));
+    }
+    if(settings&&settings.target_pct!==undefined){
+      aedTargetPct=parseFloat(settings.target_pct)||0;
+      const inp=document.getElementById('wxAEDPctInput');
+      if(inp) inp.value=aedTargetPct;
+      const lbl=document.getElementById('wxAEDTargetLabel');
+      if(lbl) lbl.textContent='= '+fN(Math.round(40000*(1+aedTargetPct/100)));
+      renderAEDChart();
+    }
+  }catch(_){}
 }
 
 function calcCumulativePL(){
@@ -657,47 +679,52 @@ function injectAEDChartUI(){
   const wrap=document.createElement('div');
   wrap.id='wxAEDChartWrap';
   wrap.style.cssText='margin:18px 0 8px;';
-  wrap.innerHTML=`
-    <div style="background:var(--glass);backdrop-filter:blur(16px);border:1px solid var(--glass-border);border-radius:18px;padding:14px 16px 10px;box-shadow:var(--sh2)">
-      <div style="font-size:.9rem;font-weight:700;color:var(--ac);margin-bottom:10px">📈 نمودار نرخ درهم (AED) — روزانه</div>
-      <div style="height:200px"><canvas id="wxAEDCanvas"></canvas></div>
-      <div style="display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap">
-        <div style="display:flex;align-items:center;gap:6px">
-          <div style="width:28px;height:3px;background:#4f8cff;border-radius:2px"></div>
-          <span style="font-size:.75rem;color:var(--tx2)">نرخ روزانه</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:6px">
-          <div style="width:28px;height:3px;background:#f5c842;border-radius:2px;border:1px dashed #f5c842"></div>
-          <span style="font-size:.75rem;color:var(--tx2)">خط هدف</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;margin-right:auto">
-          <span style="font-size:.78rem;color:var(--tx3)">هدف: ۴۰۰۰۰ +</span>
-          <input id="wxAEDPctInput" type="number" min="0" max="200" step="0.1" value="0"
-            style="width:70px;background:rgba(255,255,255,.07);border:1px solid var(--br);border-radius:8px;color:var(--tx1);font-family:var(--font);font-size:.85rem;padding:5px 8px;outline:none;text-align:center"/>
-          <span style="font-size:.78rem;color:var(--tx3)">٪</span>
-          <span id="wxAEDTargetLabel" style="font-size:.8rem;color:var(--gold);font-weight:700">= ۴۰۰۰۰</span>
-        </div>
-      </div>
-    </div>`;
+  wrap.innerHTML='<div style="background:var(--glass);backdrop-filter:blur(16px);border:1px solid var(--glass-border);border-radius:18px;padding:14px 16px 10px;box-shadow:var(--sh2)">'
+    +'<div style="font-size:.9rem;font-weight:700;color:var(--ac);margin-bottom:10px">📈 نمودار نرخ درهم (AED) — روزانه</div>'
+    +'<div style="height:210px"><canvas id="wxAEDCanvas"></canvas></div>'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap">'
+    +'<div style="display:flex;align-items:center;gap:6px"><div style="width:28px;height:3px;background:#4f8cff;border-radius:2px"></div>'
+    +'<span style="font-size:.75rem;color:var(--tx2)">نرخ روزانه</span></div>'
+    +'<div style="display:flex;align-items:center;gap:6px"><div style="width:28px;height:3px;background:#f5c842;border-radius:2px"></div>'
+    +'<span style="font-size:.75rem;color:var(--tx2)">خط هدف (رشد '+('<span id="wxAEDPctLabel">0</span>')+'٪/روز)</span></div>'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-right:auto;flex-wrap:wrap">'
+    +'<span style="font-size:.78rem;color:var(--tx3)">پایه ۴۰۰۰۰ + رشد روزانه</span>'
+    +'<input id="wxAEDPctInput" type="number" min="-50" max="50" step="0.01" value="0"'
+    +' style="width:72px;background:rgba(255,255,255,.07);border:1px solid var(--br);border-radius:8px;color:var(--tx1);font-family:var(--font);font-size:.85rem;padding:5px 8px;outline:none;text-align:center"/>'
+    +'<span style="font-size:.78rem;color:var(--tx3)">٪/روز</span>'
+    +'<button id="wxAEDPctConfirm" style="background:linear-gradient(135deg,var(--ac),#3a6fd8);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-family:var(--font);font-size:.8rem;cursor:pointer">✅ تأیید</button>'
+    +'<span id="wxAEDTargetLabel" style="font-size:.78rem;color:var(--gold);font-weight:700"></span>'
+    +'</div></div></div>';
 
-  // اضافه کردن بعد از نمودار اصلی
   const mainChartParent=document.querySelector('#tab-chart .chart-wrap')||document.querySelector('#tab-chart canvas')?.parentNode;
-  if(mainChartParent && mainChartParent.parentNode){
-    mainChartParent.parentNode.insertBefore(wrap, mainChartParent.nextSibling);
+  if(mainChartParent&&mainChartParent.parentNode){
+    mainChartParent.parentNode.insertBefore(wrap,mainChartParent.nextSibling);
   } else {
     chartTab.appendChild(wrap);
   }
 
-  // رویداد input درصد
-  const pctInput=document.getElementById('wxAEDPctInput');
-  const targetLabel=document.getElementById('wxAEDTargetLabel');
-  if(pctInput){
-    pctInput.addEventListener('input',()=>{
-      aedTargetPct=parseFloat(pctInput.value)||0;
-      const target=40000*(1+aedTargetPct/100);
-      if(targetLabel) targetLabel.textContent='= '+fN(Math.round(target));
-      renderAEDChart();
-    });
+  // دکمه تأیید
+  document.getElementById('wxAEDPctConfirm').addEventListener('click',async()=>{
+    playClick();
+    const inp=document.getElementById('wxAEDPctInput');
+    aedTargetPct=parseFloat(inp.value)||0;
+    const pctLbl=document.getElementById('wxAEDPctLabel');
+    if(pctLbl) pctLbl.textContent=aedTargetPct;
+    // ذخیره در D1
+    api('/aed/settings',{method:'PUT',body:JSON.stringify({target_pct:aedTargetPct})}).catch(()=>{});
+    localStorage.setItem('wx_aed_target_pct',String(aedTargetPct));
+    renderAEDChart();
+    toast('درصد هدف ذخیره شد','ok');
+  });
+
+  // بارگذاری درصد ذخیرهشده از localStorage
+  const savedPct=parseFloat(localStorage.getItem('wx_aed_target_pct')||'0');
+  if(savedPct){
+    aedTargetPct=savedPct;
+    const inp=document.getElementById('wxAEDPctInput');
+    if(inp) inp.value=savedPct;
+    const pctLbl=document.getElementById('wxAEDPctLabel');
+    if(pctLbl) pctLbl.textContent=savedPct;
   }
 }
 
@@ -719,18 +746,25 @@ function renderAEDChart(){
   const sorted=[...aedRateHistory].sort((a,b)=>a.d.localeCompare(b.d));
   const labels=sorted.map(h=>new Date(h.d).toLocaleDateString('fa-IR',{month:'short',day:'numeric'}));
   const rateData=sorted.map(h=>h.r);
-  const target=40000*(1+aedTargetPct/100);
-  // خط هدف: null تا آخرین نقطه موجود، از آنجا target
-  const lastIdx=sorted.length-1;
-  const targetLine=sorted.map((_,i)=>i===lastIdx?target:null);
+
+  // خط زرد: از اولین روز موجود شروع میشود و هر روز به اندازه aedTargetPct٪ رشد میکند
+  // اگر درصد صفر باشد، خط ثابت روی ۴۰۰۰۰ میماند
+  const BASE=40000;
+  const dailyRate=aedTargetPct/100;
+  const targetLine=sorted.map((_,i)=>{
+    return Math.round(BASE*Math.pow(1+dailyRate,i));
+  });
 
   const isDark=document.body.classList.contains('dark');
   const gc=isDark?'rgba(255,255,255,.07)':'rgba(0,0,0,.07)';
   const tc=isDark?'#90aec9':'#2c5282';
 
-  // حداقل و حداکثر برای محور Y
-  const minR=Math.min(...rateData,target)*0.98;
-  const maxR=Math.max(...rateData,target)*1.02;
+  const minR=Math.min(...rateData,...targetLine)*0.98;
+  const maxR=Math.max(...rateData,...targetLine)*1.02;
+
+  // آپدیت label
+  const tLbl=document.getElementById('wxAEDTargetLabel');
+  if(tLbl&&targetLine.length) tLbl.textContent='آخرین هدف: '+fN(targetLine[targetLine.length-1]);
 
   new Chart(canvas,{
     type:'line',
@@ -1084,6 +1118,8 @@ function enter(){
       loadAEDHistory();
       recordAEDRate();
       setTimeout(()=>{injectAEDChartUI();renderAEDChart();},500);
+      boursSync().then(()=>{ if(document.getElementById('tab-bours')?.classList.contains('active')) renderBours(); });
+      loadAEDSettingsFromDB();
     },350);
   } else {
     $('pe').textContent='❌ رمز اشتباه است';
@@ -1119,7 +1155,29 @@ let boursData={tsetmc:[],dfm:[]};
 function boursLoadLocal(){
   try{const s=localStorage.getItem('wx_bours');if(s) boursData=JSON.parse(s);if(!boursData.tsetmc) boursData.tsetmc=[];if(!boursData.dfm) boursData.dfm=[];}catch(_){}
 }
-function boursSave(){localStorage.setItem('wx_bours',JSON.stringify(boursData));}
+function boursSave(){
+  localStorage.setItem('wx_bours',JSON.stringify(boursData));
+}
+async function boursSync(){
+  // load از D1
+  try{
+    const [rt,rd]=await Promise.all([
+      api('/bours/tsetmc'),
+      api('/bours/dfm')
+    ]);
+    if(Array.isArray(rt)) boursData.tsetmc=rt.map(r=>({id:r.id,date:r.date,portfolio:r.portfolio,deposit:r.deposit||0,withdraw:r.withdraw||0,note:r.note||''}));
+    if(Array.isArray(rd)) boursData.dfm=rd.map(r=>({id:r.id,date:r.date,portfolio:r.portfolio,deposit:r.deposit||0,withdraw:r.withdraw||0,note:r.note||''}));
+    localStorage.setItem('wx_bours',JSON.stringify(boursData));
+  }catch(_){}
+}
+async function boursSaveRecord(section, record){
+  boursSave();
+  try{ await api('/bours/'+section,{method:'POST',body:JSON.stringify(record)}); }catch(_){}
+}
+async function boursDeleteRecord(section, id){
+  boursSave();
+  try{ await api('/bours/'+section+'/'+id,{method:'DELETE'}); }catch(_){}
+}
 
 function boursCalcPL(records){
   return records.map((rec,i)=>{
@@ -1316,7 +1374,7 @@ function renderBours(){
   page.querySelector('#boursAddT').onclick=()=>{playClick();const f=page.querySelector('#boursFormT');f.style.display=f.style.display==='none'?'block':'none';};
   page.querySelector('#bfT-cancel').onclick=()=>{page.querySelector('#boursFormT').style.display='none';};
   ['bfT-val','bfT-dep','bfT-wdr'].forEach(id=>{const el=page.querySelector('#'+id);if(el) el.addEventListener('input',()=>fmtNumInp(el));});
-  page.querySelector('#bfT-save').onclick=()=>{
+  page.querySelector('#bfT-save').onclick=async()=>{
     playSuccess();
     const date=page.querySelector('#bfT-date').value;
     const val=parseFloat((page.querySelector('#bfT-val').value||'').replace(/,/g,''));
@@ -1324,13 +1382,15 @@ function renderBours(){
     const wdr=parseFloat((page.querySelector('#bfT-wdr').value||'').replace(/,/g,''))||0;
     const note=page.querySelector('#bfT-note').value.trim();
     if(!date||!val||val<=0){toast('تاریخ و ارزش اجباری است','err');return;}
-    boursData.tsetmc.push({id:Date.now(),date,portfolio:val,deposit:dep,withdraw:wdr,note});
-    boursSave();toast('✅ رکورد TSETMC ثبت شد','ok');renderBours();
+    const newRecT={id:Date.now(),date,portfolio:val,deposit:dep,withdraw:wdr,note,created_at:Date.now()};
+    boursData.tsetmc.push(newRecT);
+    await boursSaveRecord('tsetmc',newRecT);
+    toast('✅ رکورد TSETMC ثبت شد','ok');renderBours();
   };
   page.querySelector('#boursAddD').onclick=()=>{playClick();const f=page.querySelector('#boursFormD');f.style.display=f.style.display==='none'?'block':'none';};
   page.querySelector('#bfD-cancel').onclick=()=>{page.querySelector('#boursFormD').style.display='none';};
   ['bfD-val','bfD-dep','bfD-wdr'].forEach(id=>{const el=page.querySelector('#'+id);if(el) el.addEventListener('input',()=>fmtNumInp(el));});
-  page.querySelector('#bfD-save').onclick=()=>{
+  page.querySelector('#bfD-save').onclick=async()=>{
     playSuccess();
     const date=page.querySelector('#bfD-date').value;
     const val=parseFloat((page.querySelector('#bfD-val').value||'').replace(/,/g,''));
@@ -1338,15 +1398,18 @@ function renderBours(){
     const wdr=parseFloat((page.querySelector('#bfD-wdr').value||'').replace(/,/g,''))||0;
     const note=page.querySelector('#bfD-note').value.trim();
     if(!date||!val||val<=0){toast('تاریخ و ارزش اجباری است','err');return;}
-    boursData.dfm.push({id:Date.now(),date,portfolio:val,deposit:dep,withdraw:wdr,note});
-    boursSave();toast('✅ رکورد DFM ثبت شد','ok');renderBours();
+    const newRecD={id:Date.now(),date,portfolio:val,deposit:dep,withdraw:wdr,note,created_at:Date.now()};
+    boursData.dfm.push(newRecD);
+    await boursSaveRecord('dfm',newRecD);
+    toast('✅ رکورد DFM ثبت شد','ok');renderBours();
   };
   page.querySelectorAll('.bours-del-btn').forEach(btn=>{
-    btn.onclick=()=>{
+    btn.onclick=async()=>{
       if(!confirm('این رکورد حذف شود؟')) return;
       const sec=btn.dataset.section,id=String(btn.dataset.id);
       boursData[sec]=boursData[sec].filter(r=>String(r.id)!==id);
-      boursSave();renderBours();
+      await boursDeleteRecord(sec,id);
+      renderBours();
     };
   });
   setTimeout(()=>renderBoursCharts(recT,recD),80);
