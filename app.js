@@ -1342,3 +1342,382 @@ boursLoadLocal();
     addBoursTabBtn();
   }
 })();
+
+// ══════════════════════════════════════════════════════════════════
+// ویژگی‌های تکمیلی: صداها، نمودار، PDF
+// ══════════════════════════════════════════════════════════════════
+
+// ── صداها (Sound Effects) ─────────────────────────────────────────
+const SoundManager = (function(){
+  const ctx = (typeof AudioContext !== 'undefined')
+    ? new AudioContext()
+    : (typeof webkitAudioContext !== 'undefined' ? new webkitAudioContext() : null);
+
+  function beep(freq, dur, vol){
+    if(!ctx) return;
+    try {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g);
+      g.connect(ctx.destination);
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(vol || 0.15, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+      o.start(ctx.currentTime);
+      o.stop(ctx.currentTime + dur);
+    } catch(e){}
+  }
+
+  return {
+    click:  ()=> beep(800, 0.06, 0.15),   // لمس آیکون
+    submit: ()=> beep(600, 0.12, 0.18),   // ثبت
+    pin:    ()=> beep(1000, 0.05, 0.13),  // PIN
+  };
+})();
+
+// اتصال صداها به دکمه‌ها (پس از بارگذاری DOM)
+(function attachSounds(){
+  function wire(){
+    // همه دکمه‌های ثبت / submit
+    document.querySelectorAll('button[type=submit], .save-btn, .bours-btn-save, #bfT-save, #bfD-save').forEach(b=>{
+      if(!b._soundOk){ b.addEventListener('click', ()=> SoundManager.submit()); b._soundOk=true; }
+    });
+    // همه آیکون‌های منو
+    document.querySelectorAll('.mob-nav-btn, .nb, .vab').forEach(b=>{
+      if(!b._soundOk){ b.addEventListener('click', ()=> SoundManager.click()); b._soundOk=true; }
+    });
+    // PIN pad (اگر موجود باشد)
+    document.querySelectorAll('.pin-btn, .keypad-btn, [data-pin-key]').forEach(b=>{
+      if(!b._soundOk){ b.addEventListener('click', ()=> SoundManager.pin()); b._soundOk=true; }
+    });
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', wire);
+  else wire();
+  // re-wire بعد از render صفحه بورس
+  const origRenderBours = window.renderBours || (()=>{});
+  // اتصال مجدد صدا هر بار که صفحه بورس رندر می‌شود
+  setInterval(wire, 2000);
+})();
+
+// ── نمودارهای BOURS (Chart.js) ────────────────────────────────────
+// اگر Chart.js موجود نیست، آن را بارگذاری می‌کنیم
+(function loadChartJS(){
+  if(typeof Chart !== 'undefined') return;
+  const s = document.createElement('script');
+  s.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
+  document.head.appendChild(s);
+})();
+
+// رندر نمودار ترکیبی TSETMC
+function renderTSETMCChart(containerId){
+  const container = document.getElementById(containerId);
+  if(!container) return;
+  if(typeof Chart === 'undefined'){ setTimeout(()=>renderTSETMCChart(containerId), 500); return; }
+
+  const sorted = [...boursData.tsetmc].sort((a,b)=>a.date.localeCompare(b.date));
+  const recs   = boursCalcPL(sorted);
+  if(!recs.length){ container.innerHTML='<div style="color:var(--tx3);text-align:center;padding:20px">داده‌ای موجود نیست</div>'; return; }
+
+  const aedRate = rates['AED']||1;
+  const labels  = recs.map(r=>r.date);
+  const portfolio = recs.map(r=>r.portfolio);
+  const plT     = recs.map(r=>r.pl);
+  const plAED   = recs.map(r=>+(r.pl/aedRate).toFixed(2));
+
+  container.innerHTML = '<canvas id="chartTSETMC" style="max-height:280px"></canvas>';
+  const ctx2 = document.getElementById('chartTSETMC').getContext('2d');
+  new Chart(ctx2, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'ارزش پرتفوی (تومان)',
+          data: portfolio,
+          backgroundColor: 'rgba(59,130,246,0.55)',
+          borderColor: 'rgba(59,130,246,1)',
+          borderWidth: 1,
+          yAxisID: 'yVal',
+          order: 3
+        },
+        {
+          label: 'سود/زیان (تومان)',
+          data: plT,
+          type: 'line',
+          borderColor: '#22c55e',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          pointBackgroundColor: plT.map(v=>v>=0?'#22c55e':'#ef4444'),
+          pointRadius: 4,
+          yAxisID: 'yPL',
+          order: 1
+        },
+        {
+          label: 'سود/زیان (درهم)',
+          data: plAED,
+          type: 'line',
+          borderColor: '#f59e0b',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          borderDash: [5,3],
+          pointBackgroundColor: plAED.map(v=>v>=0?'#22c55e':'#ef4444'),
+          pointRadius: 3,
+          yAxisID: 'yPL',
+          order: 2
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'top' } },
+      scales: {
+        yVal: { type:'linear', position:'right', title:{ display:true, text:'ارزش (تومان)' } },
+        yPL:  { type:'linear', position:'left',  title:{ display:true, text:'سود/زیان'    } }
+      }
+    }
+  });
+}
+
+// رندر نمودار ترکیبی DFM
+function renderDFMChart(containerId){
+  const container = document.getElementById(containerId);
+  if(!container) return;
+  if(typeof Chart === 'undefined'){ setTimeout(()=>renderDFMChart(containerId), 500); return; }
+
+  const sorted = [...boursData.dfm].sort((a,b)=>a.date.localeCompare(b.date));
+  const recs   = boursCalcPL(sorted);
+  if(!recs.length){ container.innerHTML='<div style="color:var(--tx3);text-align:center;padding:20px">داده‌ای موجود نیست</div>'; return; }
+
+  const labels  = recs.map(r=>r.date);
+  const portfolio = recs.map(r=>r.portfolio);
+  const plD     = recs.map(r=>r.pl);
+
+  container.innerHTML = '<canvas id="chartDFM" style="max-height:280px"></canvas>';
+  const ctxD = document.getElementById('chartDFM').getContext('2d');
+  new Chart(ctxD, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'ارزش پرتفوی (درهم)',
+          data: portfolio,
+          backgroundColor: 'rgba(59,130,246,0.55)',
+          borderColor: 'rgba(59,130,246,1)',
+          borderWidth: 1,
+          yAxisID: 'yVal',
+          order: 2
+        },
+        {
+          label: 'سود/زیان (درهم)',
+          data: plD,
+          type: 'line',
+          borderColor: plD.map(v=>v>=0?'#22c55e':'#ef4444'),
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          pointBackgroundColor: plD.map(v=>v>=0?'#22c55e':'#ef4444'),
+          pointRadius: 4,
+          segment: { borderColor: ctx=>ctx.p1.parsed.y>=0?'#22c55e':'#ef4444' },
+          yAxisID: 'yPL',
+          order: 1
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'top' } },
+      scales: {
+        yVal: { type:'linear', position:'right', title:{ display:true, text:'ارزش (درهم)' } },
+        yPL:  { type:'linear', position:'left',  title:{ display:true, text:'سود/زیان'   } }
+      }
+    }
+  });
+}
+
+// افزودن بخش نمودار به renderBours
+const _origRenderBours2 = renderBours;
+window.renderBours = function(){
+  _origRenderBours2();
+  // اضافه کردن بخش نمودارها
+  const page = document.getElementById('tab-bours');
+  if(!page) return;
+  const chartSection = document.createElement('div');
+  chartSection.className = 'bours-section';
+  chartSection.style.marginTop = '16px';
+  chartSection.innerHTML = `
+    <div class="bours-sec-header"><div class="bours-sec-title">📊 نمودار TSETMC</div></div>
+    <div style="padding:12px" id="boursTSETMCChart"></div>
+    <div class="bours-sec-header" style="margin-top:16px"><div class="bours-sec-title">📊 نمودار DFM</div></div>
+    <div style="padding:12px" id="boursDFMChart"></div>
+  `;
+  page.querySelector('.bours-page').appendChild(chartSection);
+  renderTSETMCChart('boursTSETMCChart');
+  renderDFMChart('boursDFMChart');
+};
+
+// ── گزارش PDF ─────────────────────────────────────────────────────
+// بارگذاری jsPDF
+(function loadJsPDF(){
+  if(window.jspdf) return;
+  const s = document.createElement('script');
+  s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+  document.head.appendChild(s);
+})();
+
+function generatePDF(range){
+  if(!window.jspdf || !window.jspdf.jsPDF){
+    alert('در حال بارگذاری کتابخانه PDF. لطفاً چند ثانیه صبر کنید.');
+    return;
+  }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+
+  // تاریخ و ساعت
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('fa-IR') + ' ' + now.toLocaleTimeString('fa-IR');
+
+  // محاسبه بازه
+  const fromDate = range.from || '0000-00-00';
+  const toDate   = range.to   || '9999-99-99';
+
+  const filterRecs = arr => arr.filter(r=> r.date >= fromDate && r.date <= toDate);
+  const recT = boursCalcPL([...filterRecs(boursData.tsetmc)].sort((a,b)=>a.date.localeCompare(b.date)));
+  const recD = boursCalcPL([...filterRecs(boursData.dfm   )].sort((a,b)=>a.date.localeCompare(b.date)));
+  const totalPLT = recT.reduce((s,r)=>s+r.pl,0);
+  const totalPLD = recD.reduce((s,r)=>s+r.pl,0);
+  const aedRate  = rates['AED']||1;
+
+  let y = 20;
+  const lm = 15; // left margin
+  const W  = 180;
+
+  // عنوان
+  doc.setFontSize(16);
+  doc.text('WHALIXIR - گزارش پرتفوی بورسی', 105, y, {align:'center'});
+  y += 8;
+  doc.setFontSize(10);
+  doc.text('تاریخ: ' + dateStr, 105, y, {align:'center'});
+  y += 8;
+  doc.text('بازه: ' + fromDate + ' تا ' + toDate, 105, y, {align:'center'});
+  y += 10;
+
+  // خط جداکننده
+  doc.setLineWidth(0.5);
+  doc.line(lm, y, lm+W, y);
+  y += 6;
+
+  // خلاصه TSETMC
+  doc.setFontSize(12);
+  doc.text('TSETMC (بورس تهران)', lm, y);
+  y += 6;
+  doc.setFontSize(10);
+  const lastT = recT.length ? recT[recT.length-1] : null;
+  doc.text('ارزش فعلی: ' + (lastT ? fN(lastT.portfolio) + ' تومان' : '-'), lm, y); y+=5;
+  doc.text('کل سود/زیان: ' + (totalPLT>=0?'+':'') + fN(Math.abs(totalPLT)) + ' تومان', lm, y); y+=5;
+  doc.text('معادل درهم: ' + (+(totalPLT/aedRate).toFixed(2)) + ' AED', lm, y); y+=8;
+
+  // جدول TSETMC
+  if(recT.length){
+    doc.setFontSize(9);
+    const headers = ['تاریخ','ارزش (تومان)','واریز','برداشت','سود/زیان'];
+    const cols    = [30, 55, 50, 50, 40];
+    let x = lm;
+    headers.forEach((h,i)=>{ doc.text(h, x, y); x+=cols[i]/180*W; });
+    y+=5;
+    doc.line(lm, y, lm+W, y); y+=3;
+    recT.forEach(r=>{
+      x=lm;
+      const row=[r.date, fN(r.portfolio), r.deposit?fN(r.deposit):'-', r.withdraw?fN(r.withdraw):'-', (r.pl>=0?'+':'')+fN(Math.abs(r.pl))];
+      row.forEach((v,i)=>{ doc.text(String(v), x, y); x+=cols[i]/180*W; });
+      y+=5;
+      if(y>270){ doc.addPage(); y=20; }
+    });
+    y+=5;
+  }
+
+  // خط جداکننده
+  doc.setLineWidth(0.3);
+  doc.line(lm, y, lm+W, y);
+  y+=6;
+
+  // خلاصه DFM
+  doc.setFontSize(12);
+  doc.text('DFM (بورس دبی)', lm, y);
+  y+=6;
+  doc.setFontSize(10);
+  const lastD = recD.length ? recD[recD.length-1] : null;
+  doc.text('ارزش فعلی: ' + (lastD ? fN(lastD.portfolio,2) + ' AED' : '-'), lm, y); y+=5;
+  doc.text('کل سود/زیان: ' + (totalPLD>=0?'+':'') + fN(Math.abs(totalPLD),2) + ' AED', lm, y); y+=8;
+
+  if(recD.length){
+    doc.setFontSize(9);
+    const headers = ['تاریخ','ارزش (AED)','واریز','برداشت','سود/زیان'];
+    const cols    = [30, 55, 50, 50, 40];
+    let x = lm;
+    headers.forEach((h,i)=>{ doc.text(h, x, y); x+=cols[i]/180*W; });
+    y+=5;
+    doc.line(lm, y, lm+W, y); y+=3;
+    recD.forEach(r=>{
+      x=lm;
+      const row=[r.date, fN(r.portfolio,2), r.deposit?fN(r.deposit,2):'-', r.withdraw?fN(r.withdraw,2):'-', (r.pl>=0?'+':'')+fN(Math.abs(r.pl),2)];
+      row.forEach((v,i)=>{ doc.text(String(v), x, y); x+=cols[i]/180*W; });
+      y+=5;
+      if(y>270){ doc.addPage(); y=20; }
+    });
+    y+=5;
+  }
+
+  // خلاصه نهایی
+  doc.line(lm, y, lm+W, y); y+=6;
+  doc.setFontSize(12);
+  doc.text('خلاصه نهایی', lm, y); y+=6;
+  doc.setFontSize(10);
+  doc.text('کل سود بورس تهران: ' + fN(Math.abs(totalPLT)) + ' تومان', lm, y); y+=5;
+  doc.text('کل سود بورس دبی: ' + fN(Math.abs(totalPLD),2) + ' AED', lm, y); y+=5;
+
+  doc.save('WHALIXIR-BOURS-Report.pdf');
+}
+
+// دکمه دانلود PDF در صفحه بورس (اضافه می‌شود بعد از render)
+const _origRenderBours3 = window.renderBours;
+window.renderBours = function(){
+  _origRenderBours3();
+  const page = document.getElementById('tab-bours');
+  if(!page) return;
+
+  const pdfSection = document.createElement('div');
+  pdfSection.style.cssText = 'padding:12px 16px;background:var(--c2);border-radius:14px;margin-bottom:16px;margin-top:8px;';
+  pdfSection.innerHTML = `
+    <div style="font-size:.95rem;font-weight:600;margin-bottom:10px">📄 دانلود گزارش PDF</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+      <button class="bours-add-btn" id="pdfToday">امروز</button>
+      <button class="bours-add-btn" id="pdfWeek">این هفته</button>
+      <button class="bours-add-btn" id="pdfMonth">این ماه</button>
+      <button class="bours-add-btn" id="pdfYear">امسال</button>
+      <input type="date" id="pdfFrom" style="background:var(--c1);border:1px solid var(--br);border-radius:8px;color:var(--tx1);font-family:var(--font);padding:6px 10px;font-size:.85rem"/>
+      <input type="date" id="pdfTo"   style="background:var(--c1);border:1px solid var(--br);border-radius:8px;color:var(--tx1);font-family:var(--font);padding:6px 10px;font-size:.85rem"/>
+      <button class="bours-add-btn" id="pdfCustom">دانلود بازه دلخواه</button>
+    </div>`;
+
+  page.querySelector('.bours-page').insertBefore(pdfSection, page.querySelector('.bours-section'));
+
+  const todayISO = ()=> new Date().toISOString().slice(0,10);
+  const addDays  = (d,n)=>{ const dt=new Date(d); dt.setDate(dt.getDate()+n); return dt.toISOString().slice(0,10); };
+  const startOfWeek = ()=>{ const d=new Date(); d.setDate(d.getDate()-d.getDay()); return d.toISOString().slice(0,10); };
+  const startOfMonth= ()=>{ const d=new Date(); return d.getFullYear()+'-'+(String(d.getMonth()+1).padStart(2,'0'))+'-01'; };
+  const startOfYear = ()=> new Date().getFullYear()+'-01-01';
+
+  pdfSection.querySelector('#pdfToday' ).onclick=()=>{ SoundManager.click(); generatePDF({from:todayISO(),to:todayISO()}); };
+  pdfSection.querySelector('#pdfWeek'  ).onclick=()=>{ SoundManager.click(); generatePDF({from:startOfWeek(),to:addDays(startOfWeek(),6)}); };
+  pdfSection.querySelector('#pdfMonth' ).onclick=()=>{ SoundManager.click(); generatePDF({from:startOfMonth(),to:todayISO()}); };
+  pdfSection.querySelector('#pdfYear'  ).onclick=()=>{ SoundManager.click(); generatePDF({from:startOfYear(),to:todayISO()}); };
+  pdfSection.querySelector('#pdfCustom').onclick=()=>{
+    SoundManager.click();
+    const f = pdfSection.querySelector('#pdfFrom').value;
+    const t = pdfSection.querySelector('#pdfTo'  ).value;
+    if(!f||!t){ alert('لطفاً تاریخ شروع و پایان را وارد کنید'); return; }
+    generatePDF({from:f, to:t});
+  };
+};
