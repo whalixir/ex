@@ -26,25 +26,27 @@ export async function onRequest(context) {
       status, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8' }
     });
 
-  if (!env.DB) {
-    return json({ error: 'D1 binding "DB" not found.' }, 500);
+  // پشتیبانی از هر دو نام binding
+  const DB = env.DB || env.whalixir || env.Moaaei;
+  if (!DB) {
+    return json({ error: 'D1 binding not found. Set Variable name to "DB" or "whalixir" in Pages > Settings > Functions > D1 Bindings. Current env keys: ' + Object.keys(env).join(',') }, 500);
   }
 
   try {
     // ── Init DB — همه جداول ────────────────────────────────────
-    await env.DB.batch([
+    await DB.batch([
       // جداول قدیمی
-      env.DB.prepare(`CREATE TABLE IF NOT EXISTS transactions (
+      DB.prepare(`CREATE TABLE IF NOT EXISTS transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         ts INTEGER NOT NULL, type TEXT NOT NULL, code TEXT NOT NULL,
         amount REAL NOT NULL, rate REAL NOT NULL, total REAL NOT NULL,
         saved_rate REAL, note TEXT DEFAULT ''
       )`),
-      env.DB.prepare(`CREATE TABLE IF NOT EXISTS rates (
+      DB.prepare(`CREATE TABLE IF NOT EXISTS rates (
         code TEXT PRIMARY KEY, value REAL NOT NULL, updated_at INTEGER NOT NULL
       )`),
       // بورس TSETMC
-      env.DB.prepare(`CREATE TABLE IF NOT EXISTS bours_tsetmc (
+      DB.prepare(`CREATE TABLE IF NOT EXISTS bours_tsetmc (
         id INTEGER PRIMARY KEY,
         date TEXT NOT NULL,
         portfolio REAL NOT NULL,
@@ -54,7 +56,7 @@ export async function onRequest(context) {
         created_at INTEGER DEFAULT 0
       )`),
       // بورس DFM
-      env.DB.prepare(`CREATE TABLE IF NOT EXISTS bours_dfm (
+      DB.prepare(`CREATE TABLE IF NOT EXISTS bours_dfm (
         id INTEGER PRIMARY KEY,
         date TEXT NOT NULL,
         portfolio REAL NOT NULL,
@@ -64,28 +66,28 @@ export async function onRequest(context) {
         created_at INTEGER DEFAULT 0
       )`),
       // تاریخچه نرخ درهم روزانه
-      env.DB.prepare(`CREATE TABLE IF NOT EXISTS aed_history (
+      DB.prepare(`CREATE TABLE IF NOT EXISTS aed_history (
         date TEXT PRIMARY KEY,
         rate REAL NOT NULL,
         updated_at INTEGER DEFAULT 0
       )`),
       // تنظیمات نمودار درهم (درصد هدف)
-      env.DB.prepare(`CREATE TABLE IF NOT EXISTS aed_settings (
+      DB.prepare(`CREATE TABLE IF NOT EXISTS aed_settings (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
       )`),
       // مقادیر پیش‌فرض نرخ‌ها
-      env.DB.prepare(`INSERT OR IGNORE INTO rates VALUES ('USD',97500,0)`),
-      env.DB.prepare(`INSERT OR IGNORE INTO rates VALUES ('AED',26500,0)`),
-      env.DB.prepare(`INSERT OR IGNORE INTO rates VALUES ('OMR',253000,0)`),
-      env.DB.prepare(`INSERT OR IGNORE INTO rates VALUES ('SAR',26000,0)`),
-      env.DB.prepare(`INSERT OR IGNORE INTO rates VALUES ('GBP',124000,0)`),
-      env.DB.prepare(`INSERT OR IGNORE INTO rates VALUES ('CHF',110000,0)`),
-      env.DB.prepare(`INSERT OR IGNORE INTO rates VALUES ('BTC',4100000000,0)`),
-      env.DB.prepare(`INSERT OR IGNORE INTO rates VALUES ('ETH',180000000,0)`),
-      env.DB.prepare(`INSERT OR IGNORE INTO rates VALUES ('SOL',15000000,0)`),
-      env.DB.prepare(`INSERT OR IGNORE INTO rates VALUES ('GOLD',6300000,0)`),
-      env.DB.prepare(`INSERT OR IGNORE INTO aed_settings VALUES ('target_pct','0')`),
+      DB.prepare(`INSERT OR IGNORE INTO rates VALUES ('USD',97500,0)`),
+      DB.prepare(`INSERT OR IGNORE INTO rates VALUES ('AED',26500,0)`),
+      DB.prepare(`INSERT OR IGNORE INTO rates VALUES ('OMR',253000,0)`),
+      DB.prepare(`INSERT OR IGNORE INTO rates VALUES ('SAR',26000,0)`),
+      DB.prepare(`INSERT OR IGNORE INTO rates VALUES ('GBP',124000,0)`),
+      DB.prepare(`INSERT OR IGNORE INTO rates VALUES ('CHF',110000,0)`),
+      DB.prepare(`INSERT OR IGNORE INTO rates VALUES ('BTC',4100000000,0)`),
+      DB.prepare(`INSERT OR IGNORE INTO rates VALUES ('ETH',180000000,0)`),
+      DB.prepare(`INSERT OR IGNORE INTO rates VALUES ('SOL',15000000,0)`),
+      DB.prepare(`INSERT OR IGNORE INTO rates VALUES ('GOLD',6300000,0)`),
+      DB.prepare(`INSERT OR IGNORE INTO aed_settings VALUES ('target_pct','0')`),
     ]);
 
     // ══════════════════════════════════════════════════════════
@@ -153,23 +155,23 @@ export async function onRequest(context) {
     //  TRANSACTIONS
     // ══════════════════════════════════════════════════════════
     if (path === '/api/transactions' && request.method === 'GET') {
-      const { results } = await env.DB.prepare('SELECT * FROM transactions ORDER BY ts DESC').all();
+      const { results } = await DB.prepare('SELECT * FROM transactions ORDER BY ts DESC').all();
       return json(results);
     }
     if (path === '/api/transactions' && request.method === 'POST') {
       const b = await request.json();
-      const r = await env.DB.prepare(
+      const r = await DB.prepare(
         'INSERT INTO transactions (ts,type,code,amount,rate,total,saved_rate,note) VALUES (?,?,?,?,?,?,?,?)'
       ).bind(b.ts||Date.now(),b.type,b.code,b.amount,b.rate,b.total,b.savedRate||b.rate,b.note||'').run();
       return json({ success:true, id:r.meta.last_row_id }, 201);
     }
     if (path === '/api/transactions' && request.method === 'DELETE') {
-      await env.DB.prepare('DELETE FROM transactions').run();
+      await DB.prepare('DELETE FROM transactions').run();
       return json({ success:true });
     }
     const txDel = path.match(/^\/api\/transactions\/(\d+)$/);
     if (txDel && request.method === 'DELETE') {
-      await env.DB.prepare('DELETE FROM transactions WHERE id=?').bind(parseInt(txDel[1])).run();
+      await DB.prepare('DELETE FROM transactions WHERE id=?').bind(parseInt(txDel[1])).run();
       return json({ success:true });
     }
 
@@ -177,7 +179,7 @@ export async function onRequest(context) {
     //  RATES
     // ══════════════════════════════════════════════════════════
     if (path === '/api/rates' && request.method === 'GET') {
-      const { results } = await env.DB.prepare('SELECT * FROM rates').all();
+      const { results } = await DB.prepare('SELECT * FROM rates').all();
       const obj = {};
       results.forEach(r => { obj[r.code] = r.value; });
       return json(obj);
@@ -185,7 +187,7 @@ export async function onRequest(context) {
     const rateUp = path.match(/^\/api\/rates\/([A-Z]+)$/);
     if (rateUp && request.method === 'PUT') {
       const { value } = await request.json();
-      await env.DB.prepare(
+      await DB.prepare(
         'INSERT INTO rates (code,value,updated_at) VALUES (?,?,?) ON CONFLICT(code) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at'
       ).bind(rateUp[1], parseFloat(value), Date.now()).run();
       return json({ success:true });
@@ -195,21 +197,21 @@ export async function onRequest(context) {
     //  BOURS — TSETMC
     // ══════════════════════════════════════════════════════════
     if (path === '/api/bours/tsetmc' && request.method === 'GET') {
-      const { results } = await env.DB.prepare(
+      const { results } = await DB.prepare(
         'SELECT * FROM bours_tsetmc ORDER BY date ASC'
       ).all();
       return json(results);
     }
     if (path === '/api/bours/tsetmc' && request.method === 'POST') {
       const b = await request.json();
-      await env.DB.prepare(
+      await DB.prepare(
         'INSERT OR REPLACE INTO bours_tsetmc (id,date,portfolio,deposit,withdraw,note,created_at) VALUES (?,?,?,?,?,?,?)'
       ).bind(b.id,b.date,b.portfolio,b.deposit||0,b.withdraw||0,b.note||'',b.created_at||Date.now()).run();
       return json({ success:true });
     }
     const tsetmcDel = path.match(/^\/api\/bours\/tsetmc\/(\d+)$/);
     if (tsetmcDel && request.method === 'DELETE') {
-      await env.DB.prepare('DELETE FROM bours_tsetmc WHERE id=?').bind(parseInt(tsetmcDel[1])).run();
+      await DB.prepare('DELETE FROM bours_tsetmc WHERE id=?').bind(parseInt(tsetmcDel[1])).run();
       return json({ success:true });
     }
 
@@ -217,21 +219,21 @@ export async function onRequest(context) {
     //  BOURS — DFM
     // ══════════════════════════════════════════════════════════
     if (path === '/api/bours/dfm' && request.method === 'GET') {
-      const { results } = await env.DB.prepare(
+      const { results } = await DB.prepare(
         'SELECT * FROM bours_dfm ORDER BY date ASC'
       ).all();
       return json(results);
     }
     if (path === '/api/bours/dfm' && request.method === 'POST') {
       const b = await request.json();
-      await env.DB.prepare(
+      await DB.prepare(
         'INSERT OR REPLACE INTO bours_dfm (id,date,portfolio,deposit,withdraw,note,created_at) VALUES (?,?,?,?,?,?,?)'
       ).bind(b.id,b.date,b.portfolio,b.deposit||0,b.withdraw||0,b.note||'',b.created_at||Date.now()).run();
       return json({ success:true });
     }
     const dfmDel = path.match(/^\/api\/bours\/dfm\/(\d+)$/);
     if (dfmDel && request.method === 'DELETE') {
-      await env.DB.prepare('DELETE FROM bours_dfm WHERE id=?').bind(parseInt(dfmDel[1])).run();
+      await DB.prepare('DELETE FROM bours_dfm WHERE id=?').bind(parseInt(dfmDel[1])).run();
       return json({ success:true });
     }
 
@@ -239,14 +241,14 @@ export async function onRequest(context) {
     //  AED HISTORY — تاریخچه نرخ درهم روزانه
     // ══════════════════════════════════════════════════════════
     if (path === '/api/aed/history' && request.method === 'GET') {
-      const { results } = await env.DB.prepare(
+      const { results } = await DB.prepare(
         'SELECT * FROM aed_history ORDER BY date ASC'
       ).all();
       return json(results);
     }
     if (path === '/api/aed/history' && request.method === 'POST') {
       const b = await request.json();
-      await env.DB.prepare(
+      await DB.prepare(
         'INSERT INTO aed_history (date,rate,updated_at) VALUES (?,?,?) ON CONFLICT(date) DO UPDATE SET rate=excluded.rate,updated_at=excluded.updated_at'
       ).bind(b.date, b.rate, Date.now()).run();
       return json({ success:true });
@@ -256,7 +258,7 @@ export async function onRequest(context) {
     //  AED SETTINGS — درصد هدف
     // ══════════════════════════════════════════════════════════
     if (path === '/api/aed/settings' && request.method === 'GET') {
-      const { results } = await env.DB.prepare('SELECT * FROM aed_settings').all();
+      const { results } = await DB.prepare('SELECT * FROM aed_settings').all();
       const obj = {};
       results.forEach(r => { obj[r.key] = r.value; });
       return json(obj);
@@ -264,7 +266,7 @@ export async function onRequest(context) {
     if (path === '/api/aed/settings' && request.method === 'PUT') {
       const b = await request.json();
       for (const [key, value] of Object.entries(b)) {
-        await env.DB.prepare(
+        await DB.prepare(
           'INSERT INTO aed_settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value'
         ).bind(key, String(value)).run();
       }
@@ -274,13 +276,13 @@ export async function onRequest(context) {
     // ── DEBUG: وضعیت DB ──────────────────────────────────────────
     if (path === '/api/debug' && request.method === 'GET') {
       try {
-        const tables = await env.DB.prepare(
+        const tables = await DB.prepare(
           "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
         ).all();
         const counts = {};
         for (const t of tables.results) {
           try {
-            const r = await env.DB.prepare(`SELECT COUNT(*) as n FROM ${t.name}`).first();
+            const r = await DB.prepare(`SELECT COUNT(*) as n FROM ${t.name}`).first();
             counts[t.name] = r.n;
           } catch(e) { counts[t.name] = 'error: '+e.message; }
         }
