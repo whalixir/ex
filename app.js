@@ -514,11 +514,13 @@ async function loadAEDSettingsFromDB(){
     }
     if(settings&&settings.target_pct!==undefined){
       aedTargetPct=parseFloat(settings.target_pct)||0;
+      localStorage.setItem('wx_aed_target_pct',String(aedTargetPct));
       const inp=document.getElementById('wxAEDPctInput');
       if(inp) inp.value=aedTargetPct;
+      const pctLbl=document.getElementById('wxAEDPctLabel');
+      if(pctLbl) pctLbl.textContent=aedTargetPct;
       const lbl=document.getElementById('wxAEDTargetLabel');
       if(lbl) lbl.textContent='= '+fN(Math.round(40000*(1+aedTargetPct/100)));
-      renderAEDChart();
     }
   }catch(_){}
 }
@@ -1109,7 +1111,17 @@ function enter(){
       ls.classList.add('hidden');
       $('app').classList.remove('hidden');
       loadLocal();
-      loadAPI().then(()=>fetchTgjuRates(false));
+      // لود از D1 و رندر کامل
+      Promise.all([
+        loadAPI(),
+        boursSync(),
+        loadAEDSettingsFromDB()
+      ]).then(()=>{
+        fetchTgjuRates(false);
+        render();
+        renderBours();
+        renderAEDChart();
+      });
       if(!window._wxAutoRefresh) window._wxAutoRefresh=setInterval(()=>fetchTgjuRates(false),30000);
       initSounds();
       injectBoursUI();
@@ -1118,8 +1130,6 @@ function enter(){
       loadAEDHistory();
       recordAEDRate();
       setTimeout(()=>{injectAEDChartUI();renderAEDChart();},500);
-      boursSync().then(()=>{ if(document.getElementById('tab-bours')?.classList.contains('active')) renderBours(); });
-      loadAEDSettingsFromDB();
     },350);
   } else {
     $('pe').textContent='❌ رمز اشتباه است';
