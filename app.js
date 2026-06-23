@@ -935,3 +935,410 @@ if(emptyTrashBtn){
     toast('سطل خالی شد','');
   };
 }
+
+// ══════════════════════════════════════════════════════════════════
+// BOURS – بورس (TSETMC + DFM)  — کاملاً مستقل از داشبورد اصلی
+// ══════════════════════════════════════════════════════════════════
+
+// ── داده‌های بورس ──────────────────────────────────────────────────
+let boursData = {
+  tsetmc: [],   // [{id, date, portfolioToman, deposit, withdraw, note}]
+  dfm:    []    // [{id, date, portfolioAED,   deposit, withdraw, note}]
+};
+
+function boursLoadLocal(){
+  try{
+    const s = localStorage.getItem('wx_bours');
+    if(s) boursData = JSON.parse(s);
+    if(!boursData.tsetmc) boursData.tsetmc=[];
+    if(!boursData.dfm)    boursData.dfm=[];
+  }catch(_){}
+}
+function boursSave(){
+  localStorage.setItem('wx_bours', JSON.stringify(boursData));
+}
+
+// وقتی تب بورس فعال می‌شود
+const origTabFn = window.tab || function(){};
+window.tab = function(id){
+  origTabFn(id);
+  if(id==='bours') renderBours();
+};
+
+// ── محاسبه سود/زیان برای یک بخش ────────────────────────────────
+// ورودی: آرایه‌ای مرتب‌شده از رکوردهای هفتگی
+// خروجی سود/زیان = (ارزش پرتفوی این هفته) – (ارزش پرتفوی هفته قبل) – واریز + برداشت
+function boursCalcPL(records){
+  // records مرتب‌شده بر اساس تاریخ (قدیمی → جدید)
+  return records.map((rec, i)=>{
+    const prev    = i > 0 ? records[i-1] : null;
+    const prevVal = prev  ? prev.portfolio : 0;
+    const netFlow = (rec.deposit||0) - (rec.withdraw||0);
+    // سود = ارزش فعلی − ارزش قبلی − ورودی خالص
+    const pl = prev ? (rec.portfolio - prevVal - netFlow) : 0;
+    return { ...rec, pl, prevPortfolio: prevVal };
+  });
+}
+
+// تبدیل ارزش تومانی TSETMC به درهم با استفاده از نرخ زنده
+function tomanToAED(toman){
+  const r = rates['AED'] || 1;
+  return toman / r;
+}
+
+// ── رندر صفحه بورس ───────────────────────────────────────────────
+function renderBours(){
+  // مطمئن می‌شویم عنصر وجود دارد
+  const page = document.getElementById('tab-bours');
+  if(!page) return;
+
+  // مرتب‌سازی بر اساس تاریخ
+  const sortedT = [...boursData.tsetmc].sort((a,b)=>a.date.localeCompare(b.date));
+  const sortedD = [...boursData.dfm].sort((a,b)=>a.date.localeCompare(b.date));
+
+  const recT = boursCalcPL(sortedT);
+  const recD = boursCalcPL(sortedD);
+
+  // آخرین ورودی و سود کل
+  const lastT = recT.length ? recT[recT.length-1] : null;
+  const lastD = recD.length ? recD[recD.length-1] : null;
+
+  const totalPLT = recT.reduce((s,r)=>s+r.pl, 0);
+  const totalPLD = recD.reduce((s,r)=>s+r.pl, 0);
+
+  // کنترت‌های ورودی TSETMC
+  const addTHTML = `
+  <div class="bours-form" id="boursFormT" style="display:none">
+    <h4>➕ ثبت هفتگی TSETMC</h4>
+    <div class="bours-form-row">
+      <label>تاریخ:</label>
+      <input type="date" id="bfT-date" value="${new Date().toISOString().slice(0,10)}"/>
+    </div>
+    <div class="bours-form-row">
+      <label>ارزش پرتفوی (تومان):</label>
+      <input type="text" id="bfT-val" inputmode="numeric" placeholder="مثال: 150,000,000"/>
+    </div>
+    <div class="bours-form-row">
+      <label>واریز (تومان):</label>
+      <input type="text" id="bfT-dep" inputmode="numeric" placeholder="0"/>
+    </div>
+    <div class="bours-form-row">
+      <label>برداشت (تومان):</label>
+      <input type="text" id="bfT-wdr" inputmode="numeric" placeholder="0"/>
+    </div>
+    <div class="bours-form-row">
+      <label>یادداشت:</label>
+      <input type="text" id="bfT-note" placeholder="اختیاری"/>
+    </div>
+    <div class="bours-form-btns">
+      <button id="bfT-save" class="bours-btn-save">✅ ثبت</button>
+      <button id="bfT-cancel" class="bours-btn-cancel">❌ لغو</button>
+    </div>
+  </div>`;
+
+  // کنترت‌های ورودی DFM
+  const addDHTML = `
+  <div class="bours-form" id="boursFormD" style="display:none">
+    <h4>➕ ثبت هفتگی DFM</h4>
+    <div class="bours-form-row">
+      <label>تاریخ:</label>
+      <input type="date" id="bfD-date" value="${new Date().toISOString().slice(0,10)}"/>
+    </div>
+    <div class="bours-form-row">
+      <label>ارزش پرتفوی (درهم):</label>
+      <input type="text" id="bfD-val" inputmode="numeric" placeholder="مثال: 50,000"/>
+    </div>
+    <div class="bours-form-row">
+      <label>واریز (درهم):</label>
+      <input type="text" id="bfD-dep" inputmode="numeric" placeholder="0"/>
+    </div>
+    <div class="bours-form-row">
+      <label>برداشت (درهم):</label>
+      <input type="text" id="bfD-wdr" inputmode="numeric" placeholder="0"/>
+    </div>
+    <div class="bours-form-row">
+      <label>یادداشت:</label>
+      <input type="text" id="bfD-note" placeholder="اختیاری"/>
+    </div>
+    <div class="bours-form-btns">
+      <button id="bfD-save" class="bours-btn-save">✅ ثبت</button>
+      <button id="bfD-cancel" class="bours-btn-cancel">❌ لغو</button>
+    </div>
+  </div>`;
+
+  // جدول TSETMC
+  const aedRate = rates['AED']||1;
+  const tableT = recT.length ? `
+  <div class="bours-table-wrap">
+    <table class="bours-table">
+      <thead><tr>
+        <th>تاریخ</th>
+        <th>ارزش پرتفوی (تومان)</th>
+        <th>معادل درهم</th>
+        <th>واریز</th>
+        <th>برداشت</th>
+        <th>سود/زیان (تومان)</th>
+        <th>یادداشت</th>
+        <th></th>
+      </tr></thead>
+      <tbody>
+        ${[...recT].reverse().map(r=>`
+        <tr>
+          <td>${r.date}</td>
+          <td class="num">${fN(r.portfolio)}</td>
+          <td class="num" style="font-size:.82rem;color:var(--tx3)">${fN(tomanToAED(r.portfolio),2)} د</td>
+          <td class="num ${(r.deposit||0)>0?'pos':''}">${r.deposit?fN(r.deposit):'-'}</td>
+          <td class="num ${(r.withdraw||0)>0?'neg':''}">${r.withdraw?fN(r.withdraw):'-'}</td>
+          <td class="num ${r.pl>0?'pos':r.pl<0?'neg':''}">${r.pl!==0?(r.pl>0?'+':'')+fN(Math.abs(r.pl)):'—'}</td>
+          <td style="font-size:.8rem">${r.note||''}</td>
+          <td><button class="bours-del-btn" data-section="tsetmc" data-id="${r.id}" title="حذف">🗑</button></td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>` : `<div class="bours-empty">هنوز رکوردی ثبت نشده.</div>`;
+
+  // جدول DFM
+  const tableD = recD.length ? `
+  <div class="bours-table-wrap">
+    <table class="bours-table">
+      <thead><tr>
+        <th>تاریخ</th>
+        <th>ارزش پرتفوی (درهم)</th>
+        <th>واریز</th>
+        <th>برداشت</th>
+        <th>سود/زیان (درهم)</th>
+        <th>یادداشت</th>
+        <th></th>
+      </tr></thead>
+      <tbody>
+        ${[...recD].reverse().map(r=>`
+        <tr>
+          <td>${r.date}</td>
+          <td class="num">${fN(r.portfolio,2)}</td>
+          <td class="num ${(r.deposit||0)>0?'pos':''}">${r.deposit?fN(r.deposit,2):'-'}</td>
+          <td class="num ${(r.withdraw||0)>0?'neg':''}">${r.withdraw?fN(r.withdraw,2):'-'}</td>
+          <td class="num ${r.pl>0?'pos':r.pl<0?'neg':''}">${r.pl!==0?(r.pl>0?'+':'')+fN(Math.abs(r.pl),2):'—'}</td>
+          <td style="font-size:.8rem">${r.note||''}</td>
+          <td><button class="bours-del-btn" data-section="dfm" data-id="${r.id}" title="حذف">🗑</button></td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>` : `<div class="bours-empty">هنوز رکوردی ثبت نشده.</div>`;
+
+  page.innerHTML = `
+  <div class="bours-page">
+
+    <!-- هدر صفحه -->
+    <div class="bours-header">
+      <div class="bours-title">📈 بورس (BOURS)</div>
+      <div class="bours-subtitle">پیگیری هفتگی پرتفوی بورسی — مستقل از داشبورد اصلی</div>
+    </div>
+
+    <!-- خلاصه -->
+    <div class="bours-summary">
+      <div class="bours-sum-card">
+        <div class="bours-sum-label">کل سود/زیان TSETMC</div>
+        <div class="bours-sum-val ${totalPLT>=0?'pos':'neg'}">${totalPLT>=0?'+':''}${fN(Math.abs(totalPLT))} تومان</div>
+        <div class="bours-sum-sub">${fN(tomanToAED(totalPLT),2)} درهم</div>
+      </div>
+      <div class="bours-sum-card">
+        <div class="bours-sum-label">کل سود/زیان DFM</div>
+        <div class="bours-sum-val ${totalPLD>=0?'pos':'neg'}">${totalPLD>=0?'+':''}${fN(Math.abs(totalPLD),2)} درهم</div>
+      </div>
+      ${lastT?`<div class="bours-sum-card">
+        <div class="bours-sum-label">ارزش فعلی TSETMC</div>
+        <div class="bours-sum-val neu">${fN(lastT.portfolio)} تومان</div>
+        <div class="bours-sum-sub">${fN(tomanToAED(lastT.portfolio),2)} درهم</div>
+      </div>`:''}
+      ${lastD?`<div class="bours-sum-card">
+        <div class="bours-sum-label">ارزش فعلی DFM</div>
+        <div class="bours-sum-val neu">${fN(lastD.portfolio,2)} درهم</div>
+      </div>`:''}
+    </div>
+
+    <!-- ── TSETMC ── -->
+    <div class="bours-section">
+      <div class="bours-sec-header">
+        <div class="bours-sec-title">🇮🇷 TSETMC — بورس تهران (تومانی)</div>
+        <button class="bours-add-btn" id="boursAddT">➕ ثبت هفتگی</button>
+      </div>
+      ${addTHTML}
+      ${tableT}
+    </div>
+
+    <!-- ── DFM ── -->
+    <div class="bours-section">
+      <div class="bours-sec-header">
+        <div class="bours-sec-title">🇦🇪 DFM — بورس دبی (درهمی)</div>
+        <button class="bours-add-btn" id="boursAddD">➕ ثبت هفتگی</button>
+      </div>
+      ${addDHTML}
+      ${tableD}
+    </div>
+
+  </div>`;
+
+  // ── اتصال رویدادها ──────────────────────────────────────────────
+
+  // TSETMC
+  page.querySelector('#boursAddT').onclick = ()=>{
+    const f = page.querySelector('#boursFormT');
+    f.style.display = f.style.display==='none'?'block':'none';
+    setTimeout(()=>{ const v=page.querySelector('#bfT-val'); if(v) v.focus(); },50);
+  };
+  page.querySelector('#bfT-cancel').onclick = ()=>{ page.querySelector('#boursFormT').style.display='none'; };
+  // format inputs
+  ['bfT-val','bfT-dep','bfT-wdr'].forEach(id=>{
+    const el=page.querySelector('#'+id);
+    if(el) el.addEventListener('input',()=>fmtNumInp(el));
+  });
+  page.querySelector('#bfT-save').onclick = ()=>{
+    const date  = page.querySelector('#bfT-date').value;
+    const val   = parseFloat((page.querySelector('#bfT-val').value||'').replace(/,/g,''));
+    const dep   = parseFloat((page.querySelector('#bfT-dep').value||'').replace(/,/g,''))||0;
+    const wdr   = parseFloat((page.querySelector('#bfT-wdr').value||'').replace(/,/g,''))||0;
+    const note  = page.querySelector('#bfT-note').value.trim();
+    if(!date||!val||val<=0){ toast('تاریخ و ارزش پرتفوی اجباری است','err'); return; }
+    boursData.tsetmc.push({ id:Date.now(), date, portfolio:val, deposit:dep, withdraw:wdr, note });
+    boursSave();
+    toast('✅ رکورد TSETMC ثبت شد','ok');
+    renderBours();
+  };
+
+  // DFM
+  page.querySelector('#boursAddD').onclick = ()=>{
+    const f = page.querySelector('#boursFormD');
+    f.style.display = f.style.display==='none'?'block':'none';
+    setTimeout(()=>{ const v=page.querySelector('#bfD-val'); if(v) v.focus(); },50);
+  };
+  page.querySelector('#bfD-cancel').onclick = ()=>{ page.querySelector('#boursFormD').style.display='none'; };
+  ['bfD-val','bfD-dep','bfD-wdr'].forEach(id=>{
+    const el=page.querySelector('#'+id);
+    if(el) el.addEventListener('input',()=>fmtNumInp(el));
+  });
+  page.querySelector('#bfD-save').onclick = ()=>{
+    const date  = page.querySelector('#bfD-date').value;
+    const val   = parseFloat((page.querySelector('#bfD-val').value||'').replace(/,/g,''));
+    const dep   = parseFloat((page.querySelector('#bfD-dep').value||'').replace(/,/g,''))||0;
+    const wdr   = parseFloat((page.querySelector('#bfD-wdr').value||'').replace(/,/g,''))||0;
+    const note  = page.querySelector('#bfD-note').value.trim();
+    if(!date||!val||val<=0){ toast('تاریخ و ارزش پرتفوی اجباری است','err'); return; }
+    boursData.dfm.push({ id:Date.now(), date, portfolio:val, deposit:dep, withdraw:wdr, note });
+    boursSave();
+    toast('✅ رکورد DFM ثبت شد','ok');
+    renderBours();
+  };
+
+  // دکمه‌های حذف
+  page.querySelectorAll('.bours-del-btn').forEach(btn=>{
+    btn.onclick = ()=>{
+      if(!confirm('این رکورد حذف شود؟')) return;
+      const sec = btn.dataset.section;
+      const id  = String(btn.dataset.id);
+      boursData[sec] = boursData[sec].filter(r=>String(r.id)!==id);
+      boursSave();
+      renderBours();
+    };
+  });
+}
+
+// لود داده هنگام شروع
+boursLoadLocal();
+
+// ── تزریق HTML تب بورس و CSS به صفحه (چون فایل HTML در دسترس نیست) ──
+(function injectBoursUI(){
+
+  // ۱. CSS
+  const style = document.createElement('style');
+  style.textContent = `
+  /* ── BOURS PAGE ───────────────────────────────── */
+  .bours-page{ padding:12px 8px 120px; max-width:900px; margin:0 auto; }
+  .bours-header{ text-align:center; padding:16px 0 8px; }
+  .bours-title{ font-size:1.4rem; font-weight:700; color:var(--ac); }
+  .bours-subtitle{ font-size:.8rem; color:var(--tx3); margin-top:4px; }
+
+  .bours-summary{ display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:10px; margin:12px 0 18px; }
+  .bours-sum-card{ background:var(--c2); border-radius:12px; padding:12px 14px; text-align:center; }
+  .bours-sum-label{ font-size:.75rem; color:var(--tx3); margin-bottom:4px; }
+  .bours-sum-val{ font-size:1.05rem; font-weight:700; }
+  .bours-sum-sub{ font-size:.72rem; color:var(--tx3); margin-top:2px; }
+
+  .bours-section{ background:var(--c2); border-radius:14px; margin-bottom:16px; overflow:hidden; }
+  .bours-sec-header{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--br); }
+  .bours-sec-title{ font-size:.95rem; font-weight:600; }
+
+  .bours-add-btn{ background:var(--ac); color:#fff; border:none; border-radius:8px; padding:7px 14px; font-family:var(--font); font-size:.82rem; cursor:pointer; }
+  .bours-add-btn:active{ opacity:.8; }
+
+  .bours-form{ background:var(--c3,var(--c2)); border-bottom:1px solid var(--br); padding:14px 16px; }
+  .bours-form h4{ margin:0 0 10px; font-size:.9rem; color:var(--ac); }
+  .bours-form-row{ display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap; }
+  .bours-form-row label{ font-size:.8rem; color:var(--tx3); min-width:170px; text-align:right; }
+  .bours-form-row input{ flex:1; min-width:140px; background:var(--c1); border:1px solid var(--br); border-radius:8px; color:var(--tx1); font-family:var(--font); font-size:.88rem; padding:7px 10px; outline:none; }
+  .bours-form-row input:focus{ border-color:var(--ac); }
+  .bours-form-btns{ display:flex; gap:10px; margin-top:10px; }
+  .bours-btn-save{ background:var(--ac); color:#fff; border:none; border-radius:8px; padding:8px 20px; font-family:var(--font); font-size:.85rem; cursor:pointer; }
+  .bours-btn-cancel{ background:var(--c1); color:var(--tx2); border:1px solid var(--br); border-radius:8px; padding:8px 18px; font-family:var(--font); font-size:.85rem; cursor:pointer; }
+
+  .bours-table-wrap{ overflow-x:auto; padding:0 4px 4px; }
+  .bours-table{ width:100%; border-collapse:collapse; font-size:.82rem; }
+  .bours-table th{ background:var(--c3,var(--c2)); padding:8px 10px; text-align:right; color:var(--tx2); font-weight:600; white-space:nowrap; border-bottom:1px solid var(--br); }
+  .bours-table td{ padding:9px 10px; border-bottom:1px solid var(--br); white-space:nowrap; color:var(--tx1); }
+  .bours-table tr:last-child td{ border-bottom:none; }
+  .bours-table td.num{ text-align:left; direction:ltr; }
+  .bours-del-btn{ background:none; border:none; cursor:pointer; font-size:1rem; opacity:.6; }
+  .bours-del-btn:hover{ opacity:1; }
+  .bours-empty{ padding:24px; text-align:center; color:var(--tx3); font-size:.88rem; }
+  `;
+  document.head.appendChild(style);
+
+  // ۲. تب بورس در منوی پایین (mob-nav)
+  // منتظر می‌مانیم تا DOM کامل شود
+  function addBoursTabBtn(){
+    // ─ منوی موبایل پایین
+    const mobNav = document.querySelector('.mob-nav');
+    if(mobNav && !document.querySelector('.mob-nav-btn[data-tab="bours"]')){
+      const btn = document.createElement('button');
+      btn.className = 'mob-nav-btn';
+      btn.dataset.tab = 'bours';
+      btn.innerHTML = `<span style="font-size:1.3rem">📈</span><span>بورس</span>`;
+      btn.onclick = ()=> window.tab('bours');
+      mobNav.appendChild(btn);
+    }
+    // ─ منوی دسکتاپ (sidebar nav)
+    const sideNav = document.querySelector('.vl') || document.querySelector('nav.nav');
+    if(sideNav && !document.querySelector('.nb[data-tab="bours"]')){
+      const nb = document.createElement('button');
+      nb.className = 'nb';
+      nb.dataset.tab = 'bours';
+      nb.textContent = '📈 بورس';
+      nb.onclick = ()=> window.tab('bours');
+      sideNav.appendChild(nb);
+    }
+  }
+
+  // ۳. صفحهٔ (section) بورس
+  function addBoursSection(){
+    if(document.getElementById('tab-bours')) return;
+    const sec = document.createElement('section');
+    sec.id = 'tab-bours';
+    sec.className = 'ts';
+    sec.innerHTML = '<div style="padding:40px;text-align:center;color:var(--tx3)">در حال بارگذاری...</div>';
+    // بعد از آخرین section.ts اضافه می‌کنیم
+    const allSections = document.querySelectorAll('section.ts');
+    if(allSections.length){
+      allSections[allSections.length-1].after(sec);
+    } else {
+      // fallback: به .am اضافه کن
+      const am = document.querySelector('.am');
+      if(am) am.appendChild(sec);
+    }
+  }
+
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', ()=>{ addBoursSection(); addBoursTabBtn(); });
+  } else {
+    addBoursSection();
+    addBoursTabBtn();
+  }
+})();
