@@ -359,6 +359,7 @@ function monthlyData(){
 }
 
 function dailyData(){
+  // گروهبندی تراکنشها بر اساس روز
   const days={};
   for(const tx of txs){
     const d=new Date(tx.ts);
@@ -367,15 +368,32 @@ function dailyData(){
     if(tx.type==='buy') days[key].buyToman+=tx.total;
     else days[key].sellToman+=tx.total;
   }
-  const sorted=Object.entries(days).sort((a,b)=>a[0].localeCompare(b[0])).slice(-14);
-  const labels=[],profitToman=[],profitAED=[];
+  // همه روزها مرتبشده (همه تاریخها، نه فقط ۱۴ روز آخر)
+  const allDays=Object.entries(days).sort((a,b)=>a[0].localeCompare(b[0]));
   const aedRate=rates['AED']||1;
-  for(const [,v] of sorted){
-    const dt=new Date(v.ts);
+  const {totalProfitToman,totalProfitAED}=calcAll();
+
+  // محاسبه سود/زیان تجمعی تا هر روز
+  let cumBuy=0,cumSell=0;
+  const allCum=allDays.map(([key,v])=>{
+    cumBuy+=v.buyToman; cumSell+=v.sellToman;
+    const t=cumSell-cumBuy;
+    return{key,ts:v.ts,plT:Math.round(t),plA:parseFloat((t/aedRate).toFixed(2))};
+  });
+
+  // ۳۰ روز آخر برای نمایش
+  const recent=allCum.slice(-30);
+  const labels=[],profitToman=[],profitAED=[];
+  for(const item of recent){
+    const dt=new Date(item.ts);
     labels.push(dt.toLocaleDateString('fa-IR',{month:'short',day:'numeric'}));
-    const p=v.sellToman-v.buyToman;
-    profitToman.push(Math.round(p));
-    profitAED.push(parseFloat((p/aedRate).toFixed(2)));
+    profitToman.push(item.plT);
+    profitAED.push(item.plA);
+  }
+  // آخرین نقطه = سود کل واقعی (شامل ارزش موجودی لحظهای)
+  if(profitToman.length){
+    profitToman[profitToman.length-1]=Math.round(totalProfitToman);
+    profitAED[profitAED.length-1]=parseFloat(totalProfitAED.toFixed(2));
   }
   return{labels,profitToman,profitAED};
 }
@@ -1994,7 +2012,7 @@ async function generatePDF(){
   +'.ftr{margin-top:20px;padding-top:10px;border-top:1px solid #e2e8f0;text-align:center;font-size:10px;color:#94a3b8;}'
   +'</style></head><body>'
   +'<div class="hdr"><div>'+logoTag+'</div>'
-  +'<div class="hdr-brand"><h1>WHALIXIR</h1><h2>by Shamsaddin Mollaei</h2>'
+  +'<div class="hdr-brand"><h1>WHALIXIR</h1>'
   +'<div class="hdr-meta">تاریخ: '+toJalali(now)+'   |   ساعت: '+now.toLocaleTimeString('fa-IR')+'   |   نرخ AED: '+fN(rates['AED'])+' تومان</div>'
   +'<span class="badge" style="background:'+vbg(totalProfitToman)+';color:'+vc(totalProfitToman)+'">'+(totalProfitToman>=0?'سودده':'زیانده')+'</span>'
   +'</div></div>'
