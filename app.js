@@ -981,6 +981,7 @@ function enter(){
       }
       initSounds();
       injectBoursUI();
+      fixNavBar();
     },350);
   } else {
     $('pe').textContent='❌ رمز اشتباه است';
@@ -1649,4 +1650,31 @@ async function generatePDF(){
 
   doc.save('whalixir-report-'+now.toISOString().slice(0,10)+'.pdf');
   toast('✅ گزارش PDF دانلود شد','ok');
+}
+
+// ══════════════════════════════════════════════════════════════════
+// اصلاح منوی پایین
+// ══════════════════════════════════════════════════════════════════
+function fixNavBar(){
+  const mobNav = document.querySelector('.mob-nav');
+  if(!mobNav) return;
+
+  // ۱. مخفی کردن منو در صفحه PIN — وقتی app مخفی است
+  const ls = $('ls');
+  if(ls){
+    // اگر صفحه PIN نمایش داده می‌شود، منو را مخفی کن
+    const observer = new MutationObserver(()=>{
+      const appHidden = $('app') && $('app').classList.contains('hidden');
+      mobNav.style.display = appHidden ? 'none' : '';
+    });
+    observer.observe($('app'), {attributes:true, attributeFilter:['class']});
+    // بررسی اولیه
+    if($('app').classList.contains('hidden')) mobNav.style.display='none';
+  }
+
+  // ۲. حذف دکمه تراکنش‌ها از منوی پایین
+  const txBtn = [...mobNav.querySelectorAll('.mob-nav-btn')].find(b=>
+    b.dataset.tab === 'transactions' || b.textContent.includes('تراکنش')
+  );
+  if(txBtn) txBtn.remove();
 }
