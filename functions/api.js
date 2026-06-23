@@ -1,5 +1,5 @@
 // ================================================================
-// WHALIXIR — Cloudflare Pages Function + D1 (Moaaei)
+// WHALIXIR — Cloudflare Pages Function + D1 (whalixir)
 // ================================================================
 
 export async function onRequest(context) {
@@ -21,7 +21,7 @@ export async function onRequest(context) {
 
     // ── Check DB binding ─────────────────────────────────────────
     if (!env.DB) {
-      return json({ error: 'D1 binding "DB" not found. Go to Pages Settings → Functions → D1 Database Bindings → Add → Variable name: DB → select Moaaei → Save.' }, 500);
+      return json({ error: 'D1 binding "DB" not found. Go to Pages Settings → Functions → D1 Database Bindings → Add → Variable name: DB → select Whalixir → Save.' }, 500);
     }
 
     try {
