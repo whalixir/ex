@@ -219,6 +219,8 @@ function initSounds(){
   ls.appendChild(f);
 })();
 
+document.addEventListener('DOMContentLoaded',function(){
+
 // ── logout ────────────────────────────────────────────────────────
 $('lo').onclick=()=>{
   playClick();
@@ -2178,3 +2180,5 @@ async function generatePDF(){
     document.body.removeChild(container);
   }
 }
+
+});
