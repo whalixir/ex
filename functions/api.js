@@ -13,6 +13,14 @@ export async function onRequest(context) {
   };
   if (request.method === 'OPTIONS') return new Response(null, { headers: cors });
 
+  // ── فقط مسیرهای API واقعی را handle کن ────────────────────────
+  // مسیرهای مجاز: /api/transactions, /api/rates, /api/tgju, /api/bours, /api/aed
+  const validPaths = ['/api/transactions','/api/rates','/api/tgju','/api/bours','/api/aed'];
+  const isValidAPI = validPaths.some(p => path === p || path.startsWith(p+'/'));
+  if (!isValidAPI) {
+    return context.next();
+  }
+
   const json = (data, status=200) =>
     new Response(JSON.stringify(data), {
       status, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8' }
