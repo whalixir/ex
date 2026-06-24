@@ -372,16 +372,40 @@ function dailyData(){
     if(tx.type==='buy') days[key].buyToman+=tx.total;
     else days[key].sellToman+=tx.total;
   }
+
   const sorted=Object.entries(days).sort((a,b)=>a[0].localeCompare(b[0])).slice(-14);
   const labels=[],profitToman=[],profitAED=[];
   const aedRate=rates['AED']||1;
-  for(const [,v] of sorted){
+
+  // ── سود تجمعی روزانه (نه سود هر روز به تنهایی) ──
+  // ابتدا سود انباشته تا قبل از ۱۴ روز اخیر را حساب می‌کنیم
+  const allSorted=Object.entries(days).sort((a,b)=>a[0].localeCompare(b[0]));
+  const cutoffKey=sorted.length ? sorted[0][0] : '';
+  let baseCum=0;
+  for(const [key,v] of allSorted){
+    if(key >= cutoffKey) break;
+    baseCum+=v.sellToman-v.buyToman;
+  }
+
+  const {totalProfitToman,totalProfitAED}=calcAll();
+
+  let cumT=baseCum;
+  for(let i=0;i<sorted.length;i++){
+    const [,v]=sorted[i];
     const dt=new Date(v.ts);
     labels.push(dt.toLocaleDateString('fa-IR',{month:'short',day:'numeric'}));
-    const p=v.sellToman-v.buyToman;
-    profitToman.push(Math.round(p));
-    profitAED.push(parseFloat((p/aedRate).toFixed(2)));
+    cumT+=v.sellToman-v.buyToman;
+
+    if(i===sorted.length-1){
+      // آخرین نقطه = سود واقعی کل داشبورد (شامل ارزش موجودی)
+      profitToman.push(Math.round(totalProfitToman));
+      profitAED.push(parseFloat(totalProfitAED.toFixed(2)));
+    } else {
+      profitToman.push(Math.round(cumT));
+      profitAED.push(parseFloat((cumT/aedRate).toFixed(2)));
+    }
   }
+
   return{labels,profitToman,profitAED};
 }
 
