@@ -1243,6 +1243,15 @@ function injectPDFButton(){
 
 async function generatePDF(){
   toast('در حال ساخت گزارش...','');
+
+  // لود کتابخانه‌ها
+  if(!window.html2canvas){
+    await new Promise((res,rej)=>{
+      const s=document.createElement('script');
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+      s.onload=res;s.onerror=rej;document.head.appendChild(s);
+    });
+  }
   if(!window.jspdf){
     await new Promise((res,rej)=>{
       const s=document.createElement('script');
@@ -1250,12 +1259,11 @@ async function generatePDF(){
       s.onload=res;s.onerror=rej;document.head.appendChild(s);
     });
   }
-  const {jsPDF}=window.jspdf;
-  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
-  const W=210,H=297,now=new Date();
-  const {result,totalProfitToman,totalProfitAED,totalInventoryValue,totalBuy}=calcAll();
+
+  const {result,totalProfitToman,totalProfitAED}=calcAll();
   const aedRate=rates['AED']||1;
-  const ret=totalBuy>0?((totalProfitToman/totalBuy)*100).toFixed(1):0;
+  const sign=totalProfitToman>=0?'+':'';
+  const color=totalProfitToman>=0?'#1a9e60':'#c83250';
 
   // بارگذاری داده بورس
   boursLoadLocal();
@@ -1266,10 +1274,9 @@ async function generatePDF(){
   const totalPLD=recD.reduce((s,r)=>s+r.pl,0);
 
   // ── رنگها ──
-  const BG=[11,17,32],CARD=[17,28,46],HDR=[20,35,65];
-  const BL=[79,140,255],GR=[38,215,130],RD=[255,82,113],YL=[245,200,66];
-  const TX=[144,174,201],TX2=[74,98,128];
-
+  const BG=[255,255,255],CARD=[245,247,250],HDR=[230,236,245];
+  const BL=[30,90,200],GR=[20,160,90],RD=[200,50,70],YL=[180,140,20];
+  const TX=[50,70,100],TX2=[120,140,170];
   // ── صفحه اول ──
   doc.setFillColor(...BG);doc.rect(0,0,W,H,'F');
 
