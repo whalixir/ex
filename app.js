@@ -382,43 +382,87 @@ if (profitToman.length) {
 }
 
 function dailyData(){
+
   const days={};
+
   for(const tx of txs){
+
     const d=new Date(tx.ts);
-    const key=d.getFullYear()+'-'+(d.getMonth()+1).toString().padStart(2,'0')+'-'+d.getDate().toString().padStart(2,'0');
-    if(!days[key]) days[key]={buyToman:0,sellToman:0,ts:tx.ts};
-    if(tx.type==='buy') days[key].buyToman+=tx.total;
-    else days[key].sellToman+=tx.total;
+
+    const key=
+      d.getFullYear()+'-'+
+      (d.getMonth()+1).toString().padStart(2,'0')+'-'+
+      d.getDate().toString().padStart(2,'0');
+
+    if(!days[key])
+      days[key]={
+        buyToman:0,
+        sellToman:0,
+        ts:tx.ts
+      };
+
+    if(tx.type==='buy')
+      days[key].buyToman+=tx.total;
+    else
+      days[key].sellToman+=tx.total;
   }
- const sorted=Object.entries(months).sort((a,b)=>a[0].localeCompare(b[0]));
-const labels=[],profitToman=[],profitAED=[];
-const aedRate=rates['AED']||1;
 
-let cumBuy = 0;
-let cumSell = 0;
+  const sorted=Object.entries(days)
+    .sort((a,b)=>a[0].localeCompare(b[0]))
+    .slice(-14);
 
-for (let i = 0; i < sorted.length; i++) {
+  const labels=[];
+  const profitToman=[];
+  const profitAED=[];
 
-    const key = sorted[i][0];
-    const v   = sorted[i][1];
+  const aedRate=rates['AED']||1;
 
-    const [yr,mo]=key.split('-');
-    labels.push(jalaliMonth(parseInt(yr),parseInt(mo)));
+  let cumBuy=0;
+  let cumSell=0;
 
-    cumBuy += v.buyToman;
-    cumSell += v.sellToman;
+  for(let i=0;i<sorted.length;i++){
 
-    const p = cumSell - cumBuy;
+    const v=sorted[i][1];
+
+    const dt=new Date(v.ts);
+
+    labels.push(
+      dt.toLocaleDateString(
+        'fa-IR',
+        {month:'short',day:'numeric'}
+      )
+    );
+
+    cumBuy+=v.buyToman;
+    cumSell+=v.sellToman;
+
+    const p=cumSell-cumBuy;
 
     profitToman.push(Math.round(p));
-    profitAED.push(parseFloat((p/aedRate).toFixed(2)));
-}
 
-const { totalProfitToman, totalProfitAED } = calcAll();
+    profitAED.push(
+      parseFloat((p/aedRate).toFixed(2))
+    );
+  }
 
-if (profitToman.length) {
-    profitToman[profitToman.length - 1] = Math.round(totalProfitToman);
-    profitAED[profitAED.length - 1] = Number(totalProfitAED.toFixed(2));
+  // آخرین نقطه = سود واقعی داشبورد
+  const {
+    totalProfitToman,
+    totalProfitAED
+  }=calcAll();
+
+  if(profitToman.length){
+    profitToman[profitToman.length-1]=Math.round(totalProfitToman);
+    profitAED[profitAED.length-1]=parseFloat(
+      totalProfitAED.toFixed(2)
+    );
+  }
+
+  return{
+    labels,
+    profitToman,
+    profitAED
+  };
 }
 function jalaliMonth(yr,mo){
   const jm=['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
