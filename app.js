@@ -372,40 +372,16 @@ function dailyData(){
     if(tx.type==='buy') days[key].buyToman+=tx.total;
     else days[key].sellToman+=tx.total;
   }
-
   const sorted=Object.entries(days).sort((a,b)=>a[0].localeCompare(b[0])).slice(-14);
   const labels=[],profitToman=[],profitAED=[];
   const aedRate=rates['AED']||1;
-
-  // ── سود تجمعی روزانه (نه سود هر روز به تنهایی) ──
-  // ابتدا سود انباشته تا قبل از ۱۴ روز اخیر را حساب می‌کنیم
-  const allSorted=Object.entries(days).sort((a,b)=>a[0].localeCompare(b[0]));
-  const cutoffKey=sorted.length ? sorted[0][0] : '';
-  let baseCum=0;
-  for(const [key,v] of allSorted){
-    if(key >= cutoffKey) break;
-    baseCum+=v.sellToman-v.buyToman;
-  }
-
-  const {totalProfitToman,totalProfitAED}=calcAll();
-
-  let cumT=baseCum;
-  for(let i=0;i<sorted.length;i++){
-    const [,v]=sorted[i];
+  for(const [,v] of sorted){
     const dt=new Date(v.ts);
     labels.push(dt.toLocaleDateString('fa-IR',{month:'short',day:'numeric'}));
-    cumT+=v.sellToman-v.buyToman;
-
-    if(i===sorted.length-1){
-      // آخرین نقطه = سود واقعی کل داشبورد (شامل ارزش موجودی)
-      profitToman.push(Math.round(totalProfitToman));
-      profitAED.push(parseFloat(totalProfitAED.toFixed(2)));
-    } else {
-      profitToman.push(Math.round(cumT));
-      profitAED.push(parseFloat((cumT/aedRate).toFixed(2)));
-    }
+    const p=v.sellToman-v.buyToman;
+    profitToman.push(Math.round(p));
+    profitAED.push(parseFloat((p/aedRate).toFixed(2)));
   }
-
   return{labels,profitToman,profitAED};
 }
 
@@ -1267,15 +1243,6 @@ function injectPDFButton(){
 
 async function generatePDF(){
   toast('در حال ساخت گزارش...','');
-
-  // لود کتابخانه‌ها
-  if(!window.html2canvas){
-    await new Promise((res,rej)=>{
-      const s=document.createElement('script');
-      s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-      s.onload=res;s.onerror=rej;document.head.appendChild(s);
-    });
-  }
   if(!window.jspdf){
     await new Promise((res,rej)=>{
       const s=document.createElement('script');
@@ -1283,71 +1250,12 @@ async function generatePDF(){
       s.onload=res;s.onerror=rej;document.head.appendChild(s);
     });
   }
-
-  const {result,totalProfitToman,totalProfitAED}=calcAll();
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  const W=210,H=297,now=new Date();
+  const {result,totalProfitToman,totalProfitAED,totalInventoryValue,totalBuy}=calcAll();
   const aedRate=rates['AED']||1;
-  const sign=totalProfitToman>=0?'+':'';
-  const color=totalProfitToman>=0?'#1a9e60':'#c83250';
-
-  // ── ساخت div موقت با محتوای فارسی ──
-  const div=document.createElement('div');
-  div.style.cssText=`
-    position:fixed;left:-9999px;top:0;
-    width:794px;min-height:1123px;
-    background:#ffffff;
-    padding:40px;
-    font-family:Tahoma,Arial,sans-serif;
-    direction:rtl;
-    color:#222;
-  `;
-
-  div.innerHTML=`
-    <div style="text-align:center;border-bottom:3px solid #1e5ac8;padding-bottom:20px;margin-bottom:28px">
-      <div style="font-size:26px;font-weight:bold;color:#1e5ac8;letter-spacing:2px">WHALIXIR</div>
-      <div style="color:#888;font-size:12px;margin-top:4px">BY SHAMSADDIN MOLLAEI</div>
-      <div style="color:#555;font-size:11px;margin-top:6px">تاریخ گزارش: ${new Date().toLocaleDateString('fa-IR')}</div>
-    </div>
-
-    <div style="display:flex;gap:20px;margin-bottom:28px">
-      <div style="flex:1;background:#f0f4ff;border-radius:10px;padding:20px;text-align:center;border:1px solid #dde5ff">
-        <div style="color:#666;font-size:13px;margin-bottom:8px">سود/زیان کل (تومان)</div>
-        <div style="color:${color};font-size:22px;font-weight:bold">${sign}${fN(Math.abs(totalProfitToman))}</div>
-      </div>
-      <div style="flex:1;background:#f0f4ff;border-radius:10px;padding:20px;text-align:center;border:1px solid #dde5ff">
-        <div style="color:#666;font-size:13px;margin-bottom:8px">سود/زیان کل (درهم)</div>
-        <div style="color:${color};font-size:22px;font-weight:bold">${sign}${fN(Math.abs(totalProfitAED),2)}</div>
-      </div>
-    </div>
-
-    <table style="width:100%;border-collapse:collapse;font-size:13px">
-      <thead>
-        <tr style="background:#1e5ac8;color:#fff">
-          <th style="padding:11px 14px;text-align:right;border-radius:0">ارز</th>
-          <th style="padding:11px 14px;text-align:center">موجودی</th>
-          <th style="padding:11px 14px;text-align:center">میانگین خرید</th>
-          <th style="padding:11px 14px;text-align:center">سود/زیان (تومان)</th>
-          <th style="padding:11px 14px;text-align:center">سود/زیان (درهم)</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${Object.entries(result).filter(([,d])=>d.buyAmt>0||d.sellAmt>0).map(([code,d],i)=>{
-          const pAED=d.profitToman/aedRate;
-          const pc=d.profitToman>=0?'#1a9e60':'#c83250';
-          const ps=d.profitToman>=0?'+':'';
-          const dec=code==='BTC'?6:code==='GOLD'?3:2;
-          return `<tr style="background:${i%2===0?'#f8faff':'#ffffff'};border-bottom:1px solid #e8eef8">
-            <td style="padding:10px 14px;font-weight:bold">${CUR[code]?.flag||''} ${code} — ${CUR[code]?.name||''}</td>
-            <td style="padding:10px 14px;text-align:center">${fN(d.inventory,dec)}</td>
-            <td style="padding:10px 14px;text-align:center">${fN(d.avgBuy)}</td>
-            <td style="padding:10px 14px;text-align:center;color:${pc};font-weight:bold">${ps}${fN(Math.abs(d.profitToman))}</td>
-            <td style="padding:10px 14px;text-align:center;color:${pc};font-weight:bold">${ps}${fN(Math.abs(pAED),2)}</td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table>
-  }
-}
-
+  const ret=totalBuy>0?((totalProfitToman/totalBuy)*100).toFixed(1):0;
 
   // بارگذاری داده بورس
   boursLoadLocal();
@@ -1358,9 +1266,9 @@ async function generatePDF(){
   const totalPLD=recD.reduce((s,r)=>s+r.pl,0);
 
   // ── رنگها ──
-const BG=[255,255,255],CARD=[245,247,250],HDR=[230,236,245];
-const BL=[30,90,200],GR=[20,160,90],RD=[200,50,70],YL=[180,140,20];
-const TX=[50,70,100],TX2=[120,140,170];
+  const BG=[11,17,32],CARD=[17,28,46],HDR=[20,35,65];
+  const BL=[79,140,255],GR=[38,215,130],RD=[255,82,113],YL=[245,200,66];
+  const TX=[144,174,201],TX2=[74,98,128];
 
   // ── صفحه اول ──
   doc.setFillColor(...BG);doc.rect(0,0,W,H,'F');
