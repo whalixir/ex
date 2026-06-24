@@ -218,21 +218,25 @@ export async function onRequest(context) {
     // ══════════════════════════════════════════════════════════
     //  BOURS — DFM
     // ══════════════════════════════════════════════════════════
-  if (path === '/api/test-insert') {
-  const r = await DB.prepare(
-    'INSERT INTO bours_dfm (date,portfolio,deposit,withdraw,note,created_at) VALUES (?,?,?,?,?,?)'
-  )
-  .bind(
-    '2026-06-25',
-    1000,
-    100,
-    0,
-    'test',
-    Date.now()
-  )
-  .run();
+if (path === '/api/debug-insert') {
+  try {
+    const r = await DB.prepare(
+      "INSERT INTO bours_dfm (date,portfolio,deposit,withdraw,note,created_at) VALUES (?,?,?,?,?,?)"
+    )
+    .bind(
+      '2026-06-25',
+      1000,
+      100,
+      0,
+      'test',
+      Date.now()
+    )
+    .run();
 
-  return json({ success: true, r });
+    return json({ success: true, meta: r.meta || r });
+  } catch (e) {
+    return json({ success: false, error: e.message });
+  }
 }
     // ══════════════════════════════════════════════════════════
     //  AED HISTORY — تاریخچه نرخ درهم روزانه
