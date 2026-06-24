@@ -367,7 +367,7 @@ function dailyData(){
   const days={};
   for(const tx of txs){
     const d=new Date(tx.ts);
-    const key=d.getFullYear()+'-'+(d.getMonth()+1).toString().padStart(2,'0')+'-'+d.getDate().toString().padStart(2,'0');
+    const key=d.getFullYear()+'-'+(d.getMonth()+1).toString().padStart(2,'0');
     if(!days[key]) days[key]={buyToman:0,sellToman:0,ts:tx.ts};
     if(tx.type==='buy') days[key].buyToman+=tx.total;
     else days[key].sellToman+=tx.total;
