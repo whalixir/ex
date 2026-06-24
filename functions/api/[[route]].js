@@ -196,7 +196,7 @@ export async function onRequest(context) {
     // ══════════════════════════════════════════════════════════
     //  BOURS — TSETMC
     // ══════════════════════════════════════════════════════════
-    if (path === '/api/bours/tsetmc' && request.method === 'GET') {
+    if (path === 'https://whalixir.pages.dev/api/bours/tsetmc' && request.method === 'GET') {
       const { results } = await DB.prepare(
         'SELECT * FROM bours_tsetmc ORDER BY date ASC'
       ).all();
