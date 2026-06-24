@@ -206,7 +206,7 @@ export async function onRequest(context) {
       const b = await request.json();
       await DB.prepare(
         'INSERT OR REPLACE INTO bours_tsetmc (id,date,portfolio,deposit,withdraw,note,created_at) VALUES (?,?,?,?,?,?,?)'
-      ).bind(b.id,b.date,b.portfolio,b.deposit||0,b.withdraw||0,b.note||'',b.created_at||Date.now()).run();
+      ).bind(b.id||null,b.date,b.portfolio,b.deposit||0,b.withdraw||0,b.note||'',b.created_at||Date.now()).run();
       return json({ success:true });
     }
     const tsetmcDel = path.match(/^\/api\/bours\/tsetmc\/(\d+)$/);
@@ -228,7 +228,7 @@ export async function onRequest(context) {
       const b = await request.json();
       await DB.prepare(
         'INSERT OR REPLACE INTO bours_dfm (id,date,portfolio,deposit,withdraw,note,created_at) VALUES (?,?,?,?,?,?,?)'
-      ).bind(b.id,b.date,b.portfolio,b.deposit||0,b.withdraw||0,b.note||'',b.created_at||Date.now()).run();
+      ).bind(b.id||null,b.date,b.portfolio,b.deposit||0,b.withdraw||0,b.note||'',b.created_at||Date.now()).run();
       return json({ success:true });
     }
     const dfmDel = path.match(/^\/api\/bours\/dfm\/(\d+)$/);
