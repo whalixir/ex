@@ -1243,66 +1243,71 @@ function injectPDFButton(){
 
 async function generatePDF(){
   toast('در حال ساخت گزارش...','');
-
-  // لود کتابخانه‌ها
-  if(!window.html2canvas){
-    await new Promise((res,rej)=>{
-      const s=document.createElement('script');
-      s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-      s.onload=res;s.onerror=rej;document.head.appendChild(s);
-    });
-  }
+  
+  // بارگذاری کتابخانه‌ها
   if(!window.jspdf){
-    await new Promise((res,rej)=>{
-      const s=document.createElement('script');
-      s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-      s.onload=res;s.onerror=rej;document.head.appendChild(s);
-    });
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
   }
+  if(!window.html2canvas){
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+  }
+  
+  // یک div موقت با محتوای فارسی بساز
+  const div=document.createElement('div');
+  div.style.cssText='position:fixed;left:-9999px;top:0;width:794px;background:#fff;padding:30px;font-family:Vazirmatn,Tahoma,Arial;direction:rtl;';
+  div.innerHTML=buildPDFHTML(); // تابع زیر
+  document.body.appendChild(div);
+  
+  const canvas=await html2canvas(div,{scale:2,useCORS:true,backgroundColor:'#ffffff'});
+  document.body.removeChild(div);
+  
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  const imgData=canvas.toDataURL('image/png');
+  const W=210,H=(canvas.height*210)/canvas.width;
+  doc.addImage(imgData,'PNG',0,0,W,H);
+  doc.save('whalixir-report.pdf');
+}
 
-  const {result,totalProfitToman,totalProfitAED}=calcAll();
+function loadScript(src){
+  return new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src=src;s.onload=res;s.onerror=rej;
+    document.head.appendChild(s);
+  });
+}
+
+function buildPDFHTML(){
+  const{result,totalProfitToman,totalProfitAED}=calcAll();
   const aedRate=rates['AED']||1;
   const sign=totalProfitToman>=0?'+':'';
   const color=totalProfitToman>=0?'#1a9e60':'#c83250';
-
-  // ── ساخت div موقت با محتوای فارسی ──
-  const div=document.createElement('div');
-  div.style.cssText=`
-    position:fixed;left:-9999px;top:0;
-    width:794px;min-height:1123px;
-    background:#ffffff;
-    padding:40px;
-    font-family:Tahoma,Arial,sans-serif;
-    direction:rtl;
-    color:#222;
-  `;
-
-  div.innerHTML=`
-    <div style="text-align:center;border-bottom:3px solid #1e5ac8;padding-bottom:20px;margin-bottom:28px">
-      <div style="font-size:26px;font-weight:bold;color:#1e5ac8;letter-spacing:2px">WHALIXIR</div>
-      <div style="color:#888;font-size:12px;margin-top:4px">BY SHAMSADDIN MOLLAEI</div>
-      <div style="color:#555;font-size:11px;margin-top:6px">تاریخ گزارش: ${new Date().toLocaleDateString('fa-IR')}</div>
+  
+  return `
+    <div style="text-align:center;margin-bottom:24px;border-bottom:2px solid #1e5ac8;padding-bottom:16px">
+      <h1 style="color:#1e5ac8;margin:0;font-size:24px">WHALIXIR</h1>
+      <p style="color:#888;margin:4px 0;font-size:12px">BY SHAMSADDIN MOLLAEI</p>
+      <p style="color:#555;font-size:11px">${new Date().toLocaleDateString('fa-IR')}</p>
     </div>
-
-    <div style="display:flex;gap:20px;margin-bottom:28px">
-      <div style="flex:1;background:#f0f4ff;border-radius:10px;padding:20px;text-align:center;border:1px solid #dde5ff">
-        <div style="color:#666;font-size:13px;margin-bottom:8px">سود/زیان کل (تومان)</div>
-        <div style="color:${color};font-size:22px;font-weight:bold">${sign}${fN(Math.abs(totalProfitToman))}</div>
+    
+    <div style="display:flex;gap:16px;margin-bottom:20px">
+      <div style="flex:1;background:#f0f4ff;border-radius:8px;padding:16px;text-align:center">
+        <div style="color:#666;font-size:12px;margin-bottom:6px">سود/زیان کل (تومان)</div>
+        <div style="color:${color};font-size:20px;font-weight:bold">${sign}${fN(Math.abs(totalProfitToman))}</div>
       </div>
-      <div style="flex:1;background:#f0f4ff;border-radius:10px;padding:20px;text-align:center;border:1px solid #dde5ff">
-        <div style="color:#666;font-size:13px;margin-bottom:8px">سود/زیان کل (درهم)</div>
-        <div style="color:${color};font-size:22px;font-weight:bold">${sign}${fN(Math.abs(totalProfitAED),2)}</div>
+      <div style="flex:1;background:#f0f4ff;border-radius:8px;padding:16px;text-align:center">
+        <div style="color:#666;font-size:12px;margin-bottom:6px">سود/زیان کل (درهم)</div>
+        <div style="color:${color};font-size:20px;font-weight:bold">${sign}${fN(Math.abs(totalProfitAED),2)}</div>
       </div>
     </div>
-
-    <table style="width:100%;border-collapse:collapse;font-size:13px">
+    
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
       <thead>
         <tr style="background:#1e5ac8;color:#fff">
-          <th style="padding:11px 14px;text-align:right;border-radius:0">ارز</th>
-          <th style="padding:11px 14px;text-align:center">موجودی</th>
-          <th style="padding:11px 14px;text-align:center">میانگین خرید</th>
-          <th style="padding:11px 14px;text-align:center">سود/زیان (تومان)</th>
-          <th style="padding:11px 14px;text-align:center">سود/زیان (درهم)</th>
+          <th style="padding:10px;text-align:right">ارز</th>
+          <th style="padding:10px;text-align:center">موجودی</th>
+          <th style="padding:10px;text-align:center">سود/زیان (تومان)</th>
+          <th style="padding:10px;text-align:center">سود/زیان (درهم)</th>
         </tr>
       </thead>
       <tbody>
@@ -1311,55 +1316,16 @@ async function generatePDF(){
           const pc=d.profitToman>=0?'#1a9e60':'#c83250';
           const ps=d.profitToman>=0?'+':'';
           const dec=code==='BTC'?6:code==='GOLD'?3:2;
-          return `<tr style="background:${i%2===0?'#f8faff':'#ffffff'};border-bottom:1px solid #e8eef8">
-            <td style="padding:10px 14px;font-weight:bold">${CUR[code]?.flag||''} ${code} — ${CUR[code]?.name||''}</td>
-            <td style="padding:10px 14px;text-align:center">${fN(d.inventory,dec)}</td>
-            <td style="padding:10px 14px;text-align:center">${fN(d.avgBuy)}</td>
-            <td style="padding:10px 14px;text-align:center;color:${pc};font-weight:bold">${ps}${fN(Math.abs(d.profitToman))}</td>
-            <td style="padding:10px 14px;text-align:center;color:${pc};font-weight:bold">${ps}${fN(Math.abs(pAED),2)}</td>
+          return `<tr style="background:${i%2===0?'#f8f9fa':'#fff'}">
+            <td style="padding:9px;font-weight:bold">${CUR[code]?.flag||''} ${code}</td>
+            <td style="padding:9px;text-align:center">${fN(d.inventory,dec)}</td>
+            <td style="padding:9px;text-align:center;color:${pc}">${ps}${fN(Math.abs(d.profitToman))}</td>
+            <td style="padding:9px;text-align:center;color:${pc}">${ps}${fN(Math.abs(pAED),2)}</td>
           </tr>`;
         }).join('')}
       </tbody>
     </table>
-
-    <div style="margin-top:30px;text-align:center;color:#aaa;font-size:11px;border-top:1px solid #eee;padding-top:16px">
-      WHALIXIR — گزارش مالی — ${new Date().toLocaleDateString('fa-IR')}
-    </div>
   `;
-
-  document.body.appendChild(div);
-
-  try{
-    const canvas=await html2canvas(div,{
-      scale:2,
-      useCORS:true,
-      backgroundColor:'#ffffff',
-      logging:false
-    });
-    document.body.removeChild(div);
-
-    const {jsPDF}=window.jspdf;
-    const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
-    const W=210;
-    const H=(canvas.height*W)/canvas.width;
-    const imgData=canvas.toDataURL('image/png');
-
-    // اگه محتوا بیشتر از یک صفحه بود
-    let y=0;
-    const pageH=297;
-    while(y<H){
-      if(y>0) doc.addPage();
-      doc.addImage(imgData,'PNG',0,-y,W,H);
-      y+=pageH;
-    }
-
-    doc.save('whalixir-report.pdf');
-    toast('گزارش PDF ذخیره شد ✅','');
-  }catch(e){
-    document.body.removeChild(div);
-    toast('خطا در ساخت PDF ❌','');
-    console.error(e);
-  }
 }
 
   // بارگذاری داده بورس
