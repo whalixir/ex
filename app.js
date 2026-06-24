@@ -159,7 +159,7 @@ async function fetchTgjuRates(showStatus=true){
     statusEl.innerHTML='<div class="rate-fetch-box"><div class="spin"></div><span>در حال دریافت نرخ‌های زنده از tgju.org ...</span></div>';
   }
   try{
-    const r=await fetch('/api/tgju?_='+Date.now(),{
+    const r=await fetch('https://whalixir.pages.dev/api/tgju?_='+Date.now(),{
       cache:'no-store',
       headers:{'Accept':'application/json'}
     });
