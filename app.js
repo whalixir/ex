@@ -1527,4 +1527,4 @@ async function generatePDF(){
   doc.save('whalixir-'+now.toISOString().slice(0,10)+'.pdf');
   toast('✅ گزارش PDF دانلود شد','ok');
 }
-})();
+})
