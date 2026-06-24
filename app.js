@@ -367,7 +367,7 @@ function dailyData(){
   const days={};
   for(const tx of txs){
     const d=new Date(tx.ts);
-    const key=d.getFullYear()+'-'+(d.getMonth()+1).toString().padStart(2,'0');
+    const key=d.getFullYear()+'-'+(d.getMonth()+1).toString().padStart(2,'0')+'-'+d.getDate().toString().padStart(2,'0');
     if(!days[key]) days[key]={buyToman:0,sellToman:0,ts:tx.ts};
     if(tx.type==='buy') days[key].buyToman+=tx.total;
     else days[key].sellToman+=tx.total;
@@ -378,10 +378,23 @@ function dailyData(){
   for(const [,v] of sorted){
     const dt=new Date(v.ts);
     labels.push(dt.toLocaleDateString('fa-IR',{month:'short',day:'numeric'}));
-    const p=v.sellToman-v.buyToman;
-    profitToman.push(Math.round(p));
-    profitAED.push(parseFloat((p/aedRate).toFixed(2)));
-  }
+   let cumBuy = 0;
+let cumSell = 0;
+
+for(const [,v] of sorted){
+
+  const dt=new Date(v.ts);
+  labels.push(dt.toLocaleDateString('fa-IR',{month:'short',day:'numeric'}));
+
+  cumBuy += v.buyToman;
+  cumSell += v.sellToman;
+
+  const p = cumSell - cumBuy;
+
+  profitToman.push(Math.round(p));
+  profitAED.push(parseFloat((p/aedRate).toFixed(2)));
+}
+ 
   return{labels,profitToman,profitAED};
 }
 
