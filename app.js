@@ -350,17 +350,35 @@ function monthlyData(){
     if(tx.type==='buy') months[key].buyToman+=tx.total;
     else months[key].sellToman+=tx.total;
   }
-  const sorted=Object.entries(months).sort((a,b)=>a[0].localeCompare(b[0]));
-  const labels=[],profitToman=[],profitAED=[];
-  const aedRate=rates['AED']||1;
-  for(const [key,v] of sorted){
+const sorted=Object.entries(months).sort((a,b)=>a[0].localeCompare(b[0]));
+const labels=[],profitToman=[],profitAED=[];
+const aedRate=rates['AED']||1;
+
+let cumBuy = 0;
+let cumSell = 0;
+
+for (let i = 0; i < sorted.length; i++) {
+
+    const key = sorted[i][0];
+    const v   = sorted[i][1];
+
     const [yr,mo]=key.split('-');
     labels.push(jalaliMonth(parseInt(yr),parseInt(mo)));
-    const p=v.sellToman-v.buyToman;
+
+    cumBuy += v.buyToman;
+    cumSell += v.sellToman;
+
+    const p = cumSell - cumBuy;
+
     profitToman.push(Math.round(p));
     profitAED.push(parseFloat((p/aedRate).toFixed(2)));
-  }
-  return{labels,profitToman,profitAED};
+}
+
+const { totalProfitToman, totalProfitAED } = calcAll();
+
+if (profitToman.length) {
+    profitToman[profitToman.length - 1] = Math.round(totalProfitToman);
+    profitAED[profitAED.length - 1] = Number(totalProfitAED.toFixed(2));
 }
 
 function dailyData(){
@@ -372,32 +390,36 @@ function dailyData(){
     if(tx.type==='buy') days[key].buyToman+=tx.total;
     else days[key].sellToman+=tx.total;
   }
-  const sorted=Object.entries(days).sort((a,b)=>a[0].localeCompare(b[0])).slice(-14);
-  const labels=[],profitToman=[],profitAED=[];
-  const aedRate=rates['AED']||1;
-  for(const [,v] of sorted){
-    const dt=new Date(v.ts);
-    labels.push(dt.toLocaleDateString('fa-IR',{month:'short',day:'numeric'}));
-   let cumBuy = 0;
+ const sorted=Object.entries(months).sort((a,b)=>a[0].localeCompare(b[0]));
+const labels=[],profitToman=[],profitAED=[];
+const aedRate=rates['AED']||1;
+
+let cumBuy = 0;
 let cumSell = 0;
 
-for(const [,v] of sorted){
+for (let i = 0; i < sorted.length; i++) {
 
-  const dt=new Date(v.ts);
-  labels.push(dt.toLocaleDateString('fa-IR',{month:'short',day:'numeric'}));
+    const key = sorted[i][0];
+    const v   = sorted[i][1];
 
-  cumBuy += v.buyToman;
-  cumSell += v.sellToman;
+    const [yr,mo]=key.split('-');
+    labels.push(jalaliMonth(parseInt(yr),parseInt(mo)));
 
-  const p = cumSell - cumBuy;
+    cumBuy += v.buyToman;
+    cumSell += v.sellToman;
 
-  profitToman.push(Math.round(p));
-  profitAED.push(parseFloat((p/aedRate).toFixed(2)));
+    const p = cumSell - cumBuy;
+
+    profitToman.push(Math.round(p));
+    profitAED.push(parseFloat((p/aedRate).toFixed(2)));
 }
- 
-  return{labels,profitToman,profitAED};
-}
 
+const { totalProfitToman, totalProfitAED } = calcAll();
+
+if (profitToman.length) {
+    profitToman[profitToman.length - 1] = Math.round(totalProfitToman);
+    profitAED[profitAED.length - 1] = Number(totalProfitAED.toFixed(2));
+}
 function jalaliMonth(yr,mo){
   const jm=['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
   let jMo=mo-3,jYr=yr-621;
