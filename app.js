@@ -1345,44 +1345,6 @@ async function generatePDF(){
         }).join('')}
       </tbody>
     </table>
-
-    <div style="margin-top:30px;text-align:center;color:#aaa;font-size:11px;border-top:1px solid #eee;padding-top:16px">
-      WHALIXIR — گزارش مالی — ${new Date().toLocaleDateString('fa-IR')}
-    </div>
-  `;
-
-  document.body.appendChild(div);
-
-  try{
-    const canvas=await html2canvas(div,{
-      scale:2,
-      useCORS:true,
-      backgroundColor:'#ffffff',
-      logging:false
-    });
-    document.body.removeChild(div);
-
-    const {jsPDF}=window.jspdf;
-    const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
-    const W=210;
-    const H=(canvas.height*W)/canvas.width;
-    const imgData=canvas.toDataURL('image/png');
-
-    // اگه محتوا بیشتر از یک صفحه بود
-    let y=0;
-    const pageH=297;
-    while(y<H){
-      if(y>0) doc.addPage();
-      doc.addImage(imgData,'PNG',0,-y,W,H);
-      y+=pageH;
-    }
-
-    doc.save('whalixir-report.pdf');
-    toast('گزارش PDF ذخیره شد ✅','');
-  }catch(e){
-    document.body.removeChild(div);
-    toast('خطا در ساخت PDF ❌','');
-    console.error(e);
   }
 }
 
