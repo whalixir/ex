@@ -1127,39 +1127,16 @@ function renderBours(){
   page.querySelector('#boursAddT').onclick=()=>{playClick();const f=page.querySelector('#boursFormT');f.style.display=f.style.display==='none'?'block':'none';};
   page.querySelector('#bfT-cancel').onclick=()=>{page.querySelector('#boursFormT').style.display='none';};
   ['bfT-val','bfT-dep','bfT-wdr'].forEach(id=>{const el=page.querySelector('#'+id);if(el) el.addEventListener('input',()=>fmtNumInp(el));});
-  page.querySelector('#bfD-save').onclick = async () => {
-  playSuccess();
+  page.querySelector('#bfT-save').onclick=()=>{
+    playSuccess();
     const date=page.querySelector('#bfT-date').value;
     const val=parseFloat((page.querySelector('#bfT-val').value||'').replace(/,/g,''));
     const dep=parseFloat((page.querySelector('#bfT-dep').value||'').replace(/,/g,''))||0;
     const wdr=parseFloat((page.querySelector('#bfT-wdr').value||'').replace(/,/g,''))||0;
     const note=page.querySelector('#bfT-note').value.trim();
     if(!date||!val||val<=0){toast('تاریخ و ارزش اجباری است','err');return;}
-    const rec = {
-  id: Date.now(),
-  date,
-  portfolio: val,
-  deposit: dep,
-  withdraw: wdr,
-  note
-};
-
-boursData.tsetmc.push(rec);
-boursSave();
-
-fetch('/api/bours/tsetmc', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json'
-  },
-  body: JSON.stringify(rec)
-})
-.then(r => r.json())
-.then(data => console.log('TSETMC saved', data))
-.catch(err => console.error(err));
-
-toast('✅ رکورد TSETMC ثبت شد','ok');
-renderBours();
+    boursData.tsetmc.push({id:Date.now(),date,portfolio:val,deposit:dep,withdraw:wdr,note});
+    boursSave();toast('✅ رکورد TSETMC ثبت شد','ok');renderBours();
   };
   page.querySelector('#boursAddD').onclick=()=>{playClick();const f=page.querySelector('#boursFormD');f.style.display=f.style.display==='none'?'block':'none';};
   page.querySelector('#bfD-cancel').onclick=()=>{page.querySelector('#boursFormD').style.display='none';};
@@ -1172,37 +1149,8 @@ renderBours();
     const wdr=parseFloat((page.querySelector('#bfD-wdr').value||'').replace(/,/g,''))||0;
     const note=page.querySelector('#bfD-note').value.trim();
     if(!date||!val||val<=0){toast('تاریخ و ارزش اجباری است','err');return;}
-    const rec = {
-  id: Date.now(),
-  date,
-  portfolio: val,
-  deposit: dep,
-  withdraw: wdr,
-  note
-};
-
-boursData.dfm.push(rec);
-boursSave();
-
-try {
-  const res = await fetch('/api/bours/dfm', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(rec)
-  });
-
-  const data = await res.json();
-  console.log('DFM saved:', data);
-
-  toast('✅ رکورد DFM ثبت شد','ok');
-  renderBours();
-
-} catch (err) {
-  console.error(err);
-  toast('❌ خطا در ذخیره دیتابیس','err');
-}
+    boursData.dfm.push({id:Date.now(),date,portfolio:val,deposit:dep,withdraw:wdr,note});
+    boursSave();toast('✅ رکورد DFM ثبت شد','ok');renderBours();
   };
   page.querySelectorAll('.bours-del-btn').forEach(btn=>{
     btn.onclick=()=>{
