@@ -1385,12 +1385,8 @@ async function generatePDF(){
     console.error(e);
   }
 }
-  const {jsPDF}=window.jspdf;
-  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
-  const W=210,H=297,now=new Date();
-  const {result,totalProfitToman,totalProfitAED,totalInventoryValue,totalBuy}=calcAll();
-  const aedRate=rates['AED']||1;
-  const ret=totalBuy>0?((totalProfitToman/totalBuy)*100).toFixed(1):0;
+ 
+
 
   // بارگذاری داده بورس
   boursLoadLocal();
