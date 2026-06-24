@@ -1385,7 +1385,6 @@ async function generatePDF(){
     console.error(e);
   }
 }
- 
 
 
   // بارگذاری داده بورس
