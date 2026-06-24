@@ -218,26 +218,24 @@ export async function onRequest(context) {
     // ══════════════════════════════════════════════════════════
     //  BOURS — DFM
     // ══════════════════════════════════════════════════════════
-if (path === '/api/debug-insert') {
-  try {
-    const r = await DB.prepare(
-      "INSERT INTO bours_dfm (date,portfolio,deposit,withdraw,note,created_at) VALUES (?,?,?,?,?,?)"
-    )
-    .bind(
-      '2026-06-25',
-      1000,
-      100,
-      0,
-      'test',
-      Date.now()
-    )
-    .run();
-
-    return json({ success: true, meta: r.meta || r });
-  } catch (e) {
-    return json({ success: false, error: e.message });
-  }
-}
+    if (path === '/api/bours/dfm' && request.method === 'GET') {
+      const { results } = await DB.prepare(
+        'SELECT * FROM bours_dfm ORDER BY date ASC'
+      ).all();
+      return json(results);
+    }
+    if (path === '/api/bours/dfm' && request.method === 'POST') {
+      const b = await request.json();
+      await DB.prepare(
+        'INSERT OR REPLACE INTO bours_dfm (id,date,portfolio,deposit,withdraw,note,created_at) VALUES (?,?,?,?,?,?,?)'
+      ).bind(b.id,b.date,b.portfolio,b.deposit||0,b.withdraw||0,b.note||'',b.created_at||Date.now()).run();
+      return json({ success:true });
+    }
+    const dfmDel = path.match(/^\/api\/bours\/dfm\/(\d+)$/);
+    if (dfmDel && request.method === 'DELETE') {
+      await DB.prepare('DELETE FROM bours_dfm WHERE id=?').bind(parseInt(dfmDel[1])).run();
+      return json({ success:true });
+    }
     // ══════════════════════════════════════════════════════════
     //  AED HISTORY — تاریخچه نرخ درهم روزانه
     // ══════════════════════════════════════════════════════════
