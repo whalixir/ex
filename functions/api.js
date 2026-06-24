@@ -27,7 +27,7 @@ export async function onRequest(context) {
     });
 
   // پشتیبانی از هر دو نام binding
-  const DB = env.DB || env.whalixir || env.Moaaei;
+  const DB = env.DB || env.whalixir;
   if (!DB) {
     return json({ error: 'D1 binding not found. Set Variable name to "DB" or "whalixir" in Pages > Settings > Functions > D1 Bindings. Current env keys: ' + Object.keys(env).join(',') }, 500);
   }
