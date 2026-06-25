@@ -1858,5 +1858,4 @@ ${curRows.length?`
     doc.text('WHALIXIR  —  گزارش محرمانه  —  '+toJalali(now),W/2,H-4,{align:'center'});
     doc.text(p+'/'+totalPages,W-12,H-4,{align:'right'});
   }
-}
 })();
