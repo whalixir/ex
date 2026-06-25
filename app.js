@@ -1014,8 +1014,6 @@ async function boursLoadAPI(){
     ]);
     boursData.tsetmc=await resT.json();
     boursData.dfm=await resD.json();
-    if(!Array.isArray(boursData.tsetmc)) boursData.tsetmc=[];
-    if(!Array.isArray(boursData.dfm)) boursData.dfm=[];
   }catch(e){
     console.error('خطا در بارگذاری بورس',e);
     boursData={tsetmc:[],dfm:[]};
