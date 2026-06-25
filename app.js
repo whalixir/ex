@@ -372,40 +372,16 @@ function dailyData(){
     if(tx.type==='buy') days[key].buyToman+=tx.total;
     else days[key].sellToman+=tx.total;
   }
-
   const sorted=Object.entries(days).sort((a,b)=>a[0].localeCompare(b[0])).slice(-14);
   const labels=[],profitToman=[],profitAED=[];
   const aedRate=rates['AED']||1;
-
-  // ── سود تجمعی روزانه (نه سود هر روز به تنهایی) ──
-  // ابتدا سود انباشته تا قبل از ۱۴ روز اخیر را حساب می‌کنیم
-  const allSorted=Object.entries(days).sort((a,b)=>a[0].localeCompare(b[0]));
-  const cutoffKey=sorted.length ? sorted[0][0] : '';
-  let baseCum=0;
-  for(const [key,v] of allSorted){
-    if(key >= cutoffKey) break;
-    baseCum+=v.sellToman-v.buyToman;
-  }
-
-  const {totalProfitToman,totalProfitAED}=calcAll();
-
-  let cumT=baseCum;
-  for(let i=0;i<sorted.length;i++){
-    const [,v]=sorted[i];
+  for(const [,v] of sorted){
     const dt=new Date(v.ts);
     labels.push(dt.toLocaleDateString('fa-IR',{month:'short',day:'numeric'}));
-    cumT+=v.sellToman-v.buyToman;
-
-    if(i===sorted.length-1){
-      // آخرین نقطه = سود واقعی کل داشبورد (شامل ارزش موجودی)
-      profitToman.push(Math.round(totalProfitToman));
-      profitAED.push(parseFloat(totalProfitAED.toFixed(2)));
-    } else {
-      profitToman.push(Math.round(cumT));
-      profitAED.push(parseFloat((cumT/aedRate).toFixed(2)));
-    }
+    const p=v.sellToman-v.buyToman;
+    profitToman.push(Math.round(p));
+    profitAED.push(parseFloat((p/aedRate).toFixed(2)));
   }
-
   return{labels,profitToman,profitAED};
 }
 
@@ -950,11 +926,21 @@ function removeTxNavBtn(){
 // BOURS — بورس کاملاً مستقل
 // ══════════════════════════════════════════════════════════════════
 let boursData={tsetmc:[],dfm:[]};
-
-function boursLoadAPI(){
-  try{const s=localStorage.getItem('wx_bours');if(s) boursData=JSON.parse(s);if(!boursData.tsetmc) boursData.tsetmc=[];if(!boursData.dfm) boursData.dfm=[];}catch(_){}
+async function boursLoadAPI(){
+  try{
+    const [resT,resD]=await Promise.all([
+      fetch('/api/bours/tsetmc'),
+      fetch('/api/bours/dfm')
+    ]);
+    boursData.tsetmc=await resT.json();
+    boursData.dfm=await resD.json();
+    if(!Array.isArray(boursData.tsetmc)) boursData.tsetmc=[];
+    if(!Array.isArray(boursData.dfm)) boursData.dfm=[];
+  }catch(e){
+    console.error('خطا در بارگذاری بورس',e);
+    boursData={tsetmc:[],dfm:[]};
+  }
 }
-function boursSave(){localStorage.setItem('wx_bours',JSON.stringify(boursData));}
 
 function boursCalcPL(records){
   return records.map((rec,i)=>{
@@ -1148,66 +1134,72 @@ function renderBours(){
   </div>`;
 
   // رویدادها
-  page.querySelector('#boursAddT').onclick=()=>{playClick();const f=page.querySelector('#boursFormT');f.style.display=f.style.display==='none'?'block':'none';};
+ page.querySelector('#boursAddT').onclick=()=>{playClick();const f=page.querySelector('#boursFormT');f.style.display=f.style.display==='none'?'block':'none';};
   page.querySelector('#bfT-cancel').onclick=()=>{page.querySelector('#boursFormT').style.display='none';};
   ['bfT-val','bfT-dep','bfT-wdr'].forEach(id=>{const el=page.querySelector('#'+id);if(el) el.addEventListener('input',()=>fmtNumInp(el));});
-  page.querySelector('#bfT-save').onclick=()=>{
-    playSuccess();
+  page.querySelector('#bfT-save').onclick=async()=>{
     const date=page.querySelector('#bfT-date').value;
     const val=parseFloat((page.querySelector('#bfT-val').value||'').replace(/,/g,''));
     const dep=parseFloat((page.querySelector('#bfT-dep').value||'').replace(/,/g,''))||0;
     const wdr=parseFloat((page.querySelector('#bfT-wdr').value||'').replace(/,/g,''))||0;
     const note=page.querySelector('#bfT-note').value.trim();
     if(!date||!val||val<=0){toast('تاریخ و ارزش اجباری است','err');return;}
-    page.querySelector('#bfT-save').onclick = async () => {
-  // ... همون کدهای خوندن input ...
-  if(!date || !val || val<=0){ toast('تاریخ و ارزش اجباری است','err'); return; }
-  try {
-    const res = await fetch('/api/bours/tsetmc', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({date, portfolio:val, deposit:dep, withdraw:wdr, note})
-    });
-    if(!res.ok) throw new Error(res.status);
-    toast('✅ رکورد TSETMC ثبت شد','ok');
-    await boursLoadAPI();
-    renderBours();
-  } catch(e) { toast('❌ خطا: '+e.message,'err'); }
-};
+    try{
+      const res=await fetch('/api/bours/tsetmc',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({date,portfolio:val,deposit:dep,withdraw:wdr,note})});
+      if(!res.ok) throw new Error(res.status);
+      playSuccess();toast('✅ رکورد TSETMC ثبت شد','ok');
+      page.querySelector('#boursFormT').style.display='none';
+      await boursLoadAPI();renderBours();
+    }catch(e){toast('❌ خطا: '+e.message,'err');}
+  };
   page.querySelector('#boursAddD').onclick=()=>{playClick();const f=page.querySelector('#boursFormD');f.style.display=f.style.display==='none'?'block':'none';};
   page.querySelector('#bfD-cancel').onclick=()=>{page.querySelector('#boursFormD').style.display='none';};
   ['bfD-val','bfD-dep','bfD-wdr'].forEach(id=>{const el=page.querySelector('#'+id);if(el) el.addEventListener('input',()=>fmtNumInp(el));});
-  page.querySelector('#bfD-save').onclick=()=>{
-    playSuccess();
+  page.querySelector('#bfD-save').onclick=async()=>{
     const date=page.querySelector('#bfD-date').value;
     const val=parseFloat((page.querySelector('#bfD-val').value||'').replace(/,/g,''));
     const dep=parseFloat((page.querySelector('#bfD-dep').value||'').replace(/,/g,''))||0;
     const wdr=parseFloat((page.querySelector('#bfD-wdr').value||'').replace(/,/g,''))||0;
     const note=page.querySelector('#bfD-note').value.trim();
     if(!date||!val||val<=0){toast('تاریخ و ارزش اجباری است','err');return;}
-    boursData.dfm.push({id:Date.now(),date,portfolio:val,deposit:dep,withdraw:wdr,note});
-    boursSave();toast('✅ رکورد DFM ثبت شد','ok');renderBours();
+    try{
+      const res=await fetch('/api/bours/dfm',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({date,portfolio:val,deposit:dep,withdraw:wdr,note})});
+      if(!res.ok) throw new Error(res.status);
+      playSuccess();toast('✅ رکورد DFM ثبت شد','ok');
+      page.querySelector('#boursFormD').style.display='none';
+      await boursLoadAPI();renderBours();
+    }catch(e){toast('❌ خطا: '+e.message,'err');}
   };
   page.querySelectorAll('.bours-del-btn').forEach(btn=>{
-    btn.onclick=()=>{
+    btn.onclick=async()=>{
       if(!confirm('این رکورد حذف شود؟')) return;
-      const sec=btn.dataset.section,id=String(btn.dataset.id);
-     btn.onclick = async () => {
-  if(!confirm('این رکورد حذف شود؟')) return;
-  const sec = btn.dataset.section, id = btn.dataset.id;
-  try {
-    await fetch(`/api/bours/${sec}/${id}`, {method:'DELETE'});
-    await boursLoadAPI();
-    renderBours();
-  } catch(e) { toast('❌ خطا در حذف','err'); }
-};
+      const sec=btn.dataset.section,id=btn.dataset.id;
+      try{
+        await fetch(`/api/bours/${sec}/${id}`,{method:'DELETE'});
+        await boursLoadAPI();renderBours();
+      }catch(e){toast('❌ خطا در حذف','err');}
     };
   });
   setTimeout(()=>renderBoursCharts(recT,recD),80);
 }
 
 // ── تزریق CSS بورس + تب ──────────────────────────────────────────
-function injectBoursUI(){
+async function boursLoadAPI() {
+  try {
+    const [resT, resD] = await Promise.all([
+      fetch('/api/bours/tsetmc'),
+      fetch('/api/bours/dfm')
+    ]);
+    boursData.tsetmc = await resT.json();
+    boursData.dfm    = await resD.json();
+  } catch(e) {
+    console.error('خطا در بارگذاری بورس', e);
+    boursData = { tsetmc: [], dfm: [] };
+  }
+}
+  function injectBoursUI(){
   if(document.getElementById('bours-style')) return;
   const s=document.createElement('style');
   s.id='bours-style';
@@ -1301,7 +1293,7 @@ async function generatePDF(){
   const ret=totalBuy>0?((totalProfitToman/totalBuy)*100).toFixed(1):0;
 
   // بارگذاری داده بورس
-  bawait boursLoadAPI();
+  await boursLoadAPI();
   const sortedT=[...boursData.tsetmc].sort((a,b)=>a.date.localeCompare(b.date));
   const sortedD=[...boursData.dfm].sort((a,b)=>a.date.localeCompare(b.date));
   const recT=boursCalcPL(sortedT),recD=boursCalcPL(sortedD);
