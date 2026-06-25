@@ -951,7 +951,7 @@ function removeTxNavBtn(){
 // ══════════════════════════════════════════════════════════════════
 let boursData={tsetmc:[],dfm:[]};
 
-function boursLoadLocal(){
+function boursLoadAPI(){
   try{const s=localStorage.getItem('wx_bours');if(s) boursData=JSON.parse(s);if(!boursData.tsetmc) boursData.tsetmc=[];if(!boursData.dfm) boursData.dfm=[];}catch(_){}
 }
 function boursSave(){localStorage.setItem('wx_bours',JSON.stringify(boursData));}
@@ -1159,8 +1159,21 @@ function renderBours(){
     const wdr=parseFloat((page.querySelector('#bfT-wdr').value||'').replace(/,/g,''))||0;
     const note=page.querySelector('#bfT-note').value.trim();
     if(!date||!val||val<=0){toast('تاریخ و ارزش اجباری است','err');return;}
-    boursData.tsetmc.push({id:Date.now(),date,portfolio:val,deposit:dep,withdraw:wdr,note});
-    boursSave();toast('✅ رکورد TSETMC ثبت شد','ok');renderBours();
+    page.querySelector('#bfT-save').onclick = async () => {
+  // ... همون کدهای خوندن input ...
+  if(!date || !val || val<=0){ toast('تاریخ و ارزش اجباری است','err'); return; }
+  try {
+    const res = await fetch('/api/bours/tsetmc', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({date, portfolio:val, deposit:dep, withdraw:wdr, note})
+    });
+    if(!res.ok) throw new Error(res.status);
+    toast('✅ رکورد TSETMC ثبت شد','ok');
+    await boursLoadAPI();
+    renderBours();
+  } catch(e) { toast('❌ خطا: '+e.message,'err'); }
+};
   };
   page.querySelector('#boursAddD').onclick=()=>{playClick();const f=page.querySelector('#boursFormD');f.style.display=f.style.display==='none'?'block':'none';};
   page.querySelector('#bfD-cancel').onclick=()=>{page.querySelector('#boursFormD').style.display='none';};
@@ -1180,8 +1193,15 @@ function renderBours(){
     btn.onclick=()=>{
       if(!confirm('این رکورد حذف شود؟')) return;
       const sec=btn.dataset.section,id=String(btn.dataset.id);
-      boursData[sec]=boursData[sec].filter(r=>String(r.id)!==id);
-      boursSave();renderBours();
+     btn.onclick = async () => {
+  if(!confirm('این رکورد حذف شود؟')) return;
+  const sec = btn.dataset.section, id = btn.dataset.id;
+  try {
+    await fetch(`/api/bours/${sec}/${id}`, {method:'DELETE'});
+    await boursLoadAPI();
+    renderBours();
+  } catch(e) { toast('❌ خطا در حذف','err'); }
+};
     };
   });
   setTimeout(()=>renderBoursCharts(recT,recD),80);
@@ -1249,7 +1269,7 @@ function injectBoursUI(){
     if(all.length) all[all.length-1].after(sec);
     else{const am=document.querySelector('.am');if(am) am.appendChild(sec);}
   }
-  boursLoadLocal();
+  boursLoadAPI().then(() => renderBours());
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -1282,7 +1302,7 @@ async function generatePDF(){
   const ret=totalBuy>0?((totalProfitToman/totalBuy)*100).toFixed(1):0;
 
   // بارگذاری داده بورس
-  boursLoadLocal();
+  bawait boursLoadAPI();
   const sortedT=[...boursData.tsetmc].sort((a,b)=>a.date.localeCompare(b.date));
   const sortedD=[...boursData.dfm].sort((a,b)=>a.date.localeCompare(b.date));
   const recT=boursCalcPL(sortedT),recD=boursCalcPL(sortedD);
