@@ -1174,7 +1174,6 @@ function renderBours(){
     renderBours();
   } catch(e) { toast('❌ خطا: '+e.message,'err'); }
 };
-  };
   page.querySelector('#boursAddD').onclick=()=>{playClick();const f=page.querySelector('#boursFormD');f.style.display=f.style.display==='none'?'block':'none';};
   page.querySelector('#bfD-cancel').onclick=()=>{page.querySelector('#boursFormD').style.display='none';};
   ['bfD-val','bfD-dep','bfD-wdr'].forEach(id=>{const el=page.querySelector('#'+id);if(el) el.addEventListener('input',()=>fmtNumInp(el));});
