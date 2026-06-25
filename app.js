@@ -254,6 +254,58 @@ function loadLocal(){
   render();
 }
 async function loadAPI(){
+// ── Pull to Refresh ───────────────────────────────────────────────
+(function initPullToRefresh(){
+  const main=document.querySelector('.am');
+  if(!main) return;
+  let startY=0,pulling=false,indicator=null;
+  const THRESHOLD=65;
+
+  function createIndicator(){
+    const el=document.createElement('div');
+    el.id='wx-ptr';
+    el.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9998;height:0;overflow:hidden;display:flex;align-items:center;justify-content:center;background:linear-gradient(to bottom,rgba(79,140,255,.18),transparent);transition:height .2s ease;pointer-events:none;';
+    el.innerHTML='<div style="font-size:.85rem;color:#4f8cff;opacity:0;transition:opacity .2s" id="wx-ptr-txt">↓ بکش برای بروزرسانی</div>';
+    document.body.appendChild(el);
+    return el;
+  }
+
+  main.addEventListener('touchstart',e=>{
+    if(main.scrollTop===0){
+      startY=e.touches[0].clientY;
+      pulling=true;
+      if(!indicator) indicator=createIndicator();
+    }
+  },{passive:true});
+
+  main.addEventListener('touchmove',e=>{
+    if(!pulling) return;
+    const dy=e.touches[0].clientY-startY;
+    if(dy<=0){indicator.style.height='0';return;}
+    const h=Math.min(dy*0.45,70);
+    indicator.style.height=h+'px';
+    const txt=document.getElementById('wx-ptr-txt');
+    if(txt){
+      txt.style.opacity=Math.min(h/THRESHOLD,1);
+      txt.textContent=h>=THRESHOLD?'↑ رها کن!':'↓ بکش برای بروزرسانی';
+    }
+  },{passive:true});
+
+  main.addEventListener('touchend',async()=>{
+    if(!pulling) return;
+    pulling=false;
+    const h=parseInt(indicator.style.height)||0;
+    indicator.style.height='0';
+    const txt=document.getElementById('wx-ptr-txt');
+    if(txt) txt.style.opacity='0';
+    if(h>=THRESHOLD){
+      toast('🔄 در حال بروزرسانی...','');
+      await loadAPI();
+      await fetchTgjuRates(false);
+      toast('✅ بروز شد','ok');
+    }
+  });
+})();
   try{
     const [r,t]=await Promise.all([api('/rates'),api('/transactions')]);
     Object.assign(rates,r);
@@ -919,6 +971,7 @@ function enter(){
       injectBoursUI();
       injectPDFButton();
       removeTxNavBtn();
+      initPullToRefresh();
     },350);
   } else {
     $('pe').textContent='❌ رمز اشتباه است';
