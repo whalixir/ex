@@ -1356,206 +1356,315 @@ function injectPDFButton(){
 
 async function generatePDF(){
   toast('در حال ساخت گزارش...','');
-  if(!window.jspdf){
-    await new Promise((res,rej)=>{
+
+  function loadScript(src){
+    return new Promise((res,rej)=>{
       const s=document.createElement('script');
-      s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-      s.onload=res;s.onerror=rej;document.head.appendChild(s);
+      s.src=src; s.onload=res; s.onerror=rej;
+      document.head.appendChild(s);
     });
   }
-  const {jsPDF}=window.jspdf;
-  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
-  const W=210,H=297,now=new Date();
+
+  if(!window.jspdf) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+  if(!window.html2canvas) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+
   const {result,totalProfitToman,totalProfitAED,totalInventoryValue,totalBuy}=calcAll();
   const aedRate=rates['AED']||1;
   const ret=totalBuy>0?((totalProfitToman/totalBuy)*100).toFixed(1):0;
+  const now=new Date();
 
-  // بارگذاری داده بورس
   await boursLoadAPI();
   const sortedT=[...boursData.tsetmc].sort((a,b)=>a.date.localeCompare(b.date));
   const sortedD=[...boursData.dfm].sort((a,b)=>a.date.localeCompare(b.date));
-  const recT=boursCalcPL(sortedT),recD=boursCalcPL(sortedD);
+  const recT=boursCalcPL(sortedT), recD=boursCalcPL(sortedD);
   const totalPLT=recT.reduce((s,r)=>s+r.pl,0);
   const totalPLD=recD.reduce((s,r)=>s+r.pl,0);
 
-  // ── رنگها ──
-  const BG=[11,17,32],CARD=[17,28,46],HDR=[20,35,65];
-  const BL=[79,140,255],GR=[38,215,130],RD=[255,82,113],YL=[245,200,66];
-  const TX=[144,174,201],TX2=[74,98,128];
+  const plSign=(v)=>v>=0?'+':'-';
 
-  // ── صفحه اول ──
-  doc.setFillColor(...BG);doc.rect(0,0,W,H,'F');
-
-  // لوگو/هدر
-  doc.setFillColor(...HDR);doc.roundedRect(10,10,W-20,32,5,5,'F');
-  // خط تزئینی آبی
-  doc.setFillColor(...BL);doc.rect(10,10,4,32,'F');
-  doc.setTextColor(...BL);doc.setFontSize(20);doc.setFont('helvetica','bold');
-  doc.text('WHALIXIR',W/2,26,{align:'center'});
-  doc.setFontSize(8);doc.setTextColor(...TX);
-  doc.text('BY SHAMSADDIN MOLLAEI',W/2,32,{align:'center'});
-  doc.setFontSize(9);doc.setTextColor(...BL);
-  doc.text('گزارش جامع مالی',W/2,38,{align:'center'});
-
-  // تاریخ/زمان
-  doc.setFontSize(8);doc.setTextColor(...TX2);
-  doc.text('تاریخ: '+toJalali(now)+'   |   ساعت: '+now.toLocaleTimeString('fa-IR'),W/2,46,{align:'center'});
-
-  let y=54;
-
-  function newPageIfNeeded(need=25){
-    if(y+need>H-15){
-      doc.addPage();
-      doc.setFillColor(...BG);doc.rect(0,0,W,H,'F');
-      y=15;
-    }
-  }
-
-  function sectionTitle(title,color=BL){
-    newPageIfNeeded(14);
-    doc.setFillColor(...HDR);doc.roundedRect(10,y,W-20,9,2,2,'F');
-    doc.setFillColor(...color);doc.rect(10,y,3,9,'F');
-    doc.setTextColor(...color);doc.setFontSize(10);doc.setFont('helvetica','bold');
-    doc.text(title,W-16,y+6.2,{align:'right'});
-    y+=12;
-  }
-
-  function dataRow(label,value,valColor=TX){
-    newPageIfNeeded(9);
-    const even=(Math.round((y-54)/8.5))%2===0;
-    doc.setFillColor(even?17:14,even?28:22,even?46:38);
-    doc.rect(10,y,W-20,8,'F');
-    doc.setTextColor(...TX);doc.setFontSize(8);doc.setFont('helvetica','normal');
-    doc.text(label,W-14,y+5.2,{align:'right'});
-    doc.setTextColor(...valColor);doc.setFont('helvetica','bold');
-    doc.text(String(value),24,y+5.2,{align:'left'});
-    y+=8.5;
-  }
-
-  // ═══ ۱. خلاصه مالی ═══
-  sectionTitle('خلاصه وضعیت مالی',BL);
-  const plC=totalProfitToman>=0?GR:RD;
-  dataRow('سود/زیان کل (تومان)',(totalProfitToman>=0?'+ ':'- ')+fN(Math.abs(totalProfitToman))+' تومان',plC);
-  dataRow('سود/زیان کل (درهم)',(totalProfitAED>=0?'+ ':'- ')+fN(Math.abs(totalProfitAED),2)+' درهم',plC);
-  dataRow('ارزش کل داراییها',fN(Math.round(totalInventoryValue))+' تومان',TX);
-  dataRow('بازدهی کل',ret+'٪',(parseFloat(ret)>=0?GR:RD));
-  dataRow('کل سرمایهگذاری',fN(Math.round(totalBuy))+' تومان',TX);
-  y+=4;
-
-  // ═══ ۲. TSETMC ═══
-  if(recT.length){
-    sectionTitle('بورس تهران — TSETMC',[79,140,255]);
-    dataRow('سود/زیان کل',(totalPLT>=0?'+ ':'- ')+fN(Math.abs(totalPLT))+' تومان',totalPLT>=0?GR:RD);
-    dataRow('معادل درهم',(totalPLT>=0?'+ ':'- ')+fN(Math.abs(tomanToAED(totalPLT)),2)+' درهم',totalPLT>=0?GR:RD);
-    if(recT[recT.length-1]) dataRow('ارزش جاری پرتفوی',fN(recT[recT.length-1].portfolio)+' تومان',TX);
-    // جدول هفتگی
-    y+=3;
-    newPageIfNeeded(10);
-    doc.setFillColor(...HDR);doc.rect(10,y,W-20,7,'F');
-    doc.setTextColor(...TX);doc.setFontSize(7.5);doc.setFont('helvetica','bold');
-    ['تاریخ','ارزش (تومان)','واریز','برداشت','سود/زیان'].forEach((h,i)=>{
-      const xs=[W-14,W-50,W-85,W-110,24];
-      doc.text(h,xs[i],y+4.8,{align:i<4?'right':'left'});
-    });
-    y+=7;
-    [...recT].slice(-8).forEach(r=>{
-      newPageIfNeeded(8);
-      const even2=(recT.indexOf(r))%2===0;
-      doc.setFillColor(even2?17:14,even2?28:22,even2?46:38);
-      doc.rect(10,y,W-20,7,'F');
-      doc.setTextColor(...TX);doc.setFontSize(7);doc.setFont('helvetica','normal');
-      doc.text(toJalaliShort(r.date),W-14,y+4.8,{align:'right'});
-      doc.text(fN(r.portfolio),W-50,y+4.8,{align:'right'});
-      doc.text(r.deposit?fN(r.deposit):'-',W-85,y+4.8,{align:'right'});
-      doc.text(r.withdraw?fN(r.withdraw):'-',W-110,y+4.8,{align:'right'});
-      doc.setTextColor(...(r.pl>=0?GR:RD));
-      doc.text((r.pl>=0?'+ ':'- ')+fN(Math.abs(r.pl)),24,y+4.8,{align:'left'});
-      y+=7;
-    });
-    y+=5;
-  }
-
-  // ═══ ۳. DFM ═══
-  if(recD.length){
-    sectionTitle('بورس دبی — DFM',[245,200,66]);
-    dataRow('سود/زیان کل',(totalPLD>=0?'+ ':'- ')+fN(Math.abs(totalPLD),2)+' درهم',totalPLD>=0?GR:RD);
-    if(recD[recD.length-1]) dataRow('ارزش جاری پرتفوی',fN(recD[recD.length-1].portfolio,2)+' درهم',TX);
-    y+=3;
-    newPageIfNeeded(10);
-    doc.setFillColor(...HDR);doc.rect(10,y,W-20,7,'F');
-    doc.setTextColor(...TX);doc.setFontSize(7.5);doc.setFont('helvetica','bold');
-    ['تاریخ','ارزش (درهم)','واریز','برداشت','سود/زیان'].forEach((h,i)=>{
-      const xs=[W-14,W-50,W-85,W-110,24];
-      doc.text(h,xs[i],y+4.8,{align:i<4?'right':'left'});
-    });
-    y+=7;
-    [...recD].slice(-8).forEach(r=>{
-      newPageIfNeeded(8);
-      doc.setFillColor(17,28,46);doc.rect(10,y,W-20,7,'F');
-      doc.setTextColor(...TX);doc.setFontSize(7);doc.setFont('helvetica','normal');
-      doc.text(toJalaliShort(r.date),W-14,y+4.8,{align:'right'});
-      doc.text(fN(r.portfolio,2),W-50,y+4.8,{align:'right'});
-      doc.text(r.deposit?fN(r.deposit,2):'-',W-85,y+4.8,{align:'right'});
-      doc.text(r.withdraw?fN(r.withdraw,2):'-',W-110,y+4.8,{align:'right'});
-      doc.setTextColor(...(r.pl>=0?GR:RD));
-      doc.text((r.pl>=0?'+ ':'- ')+fN(Math.abs(r.pl),2),24,y+4.8,{align:'left'});
-      y+=7;
-    });
-    y+=5;
-  }
-
-  // ═══ ۴. ارزها ═══
   const curRows=Object.entries(CUR).map(([code,c])=>{
-    const d=result[code];if(!d||d.buyAmt===0) return null;
-    return{code,c,d};
+    const d=result[code]; if(!d||d.buyAmt===0) return null;
+    return {code,c,d};
   }).filter(Boolean);
-  if(curRows.length){
-    sectionTitle('پرتفوی ارزها',GR);
-    newPageIfNeeded(10);
-    doc.setFillColor(...HDR);doc.rect(10,y,W-20,7,'F');
-    doc.setTextColor(...TX);doc.setFontSize(7.5);doc.setFont('helvetica','bold');
-    ['ارز','موجودی','میانگین خرید','ارزش فعلی','سود/زیان'].forEach((h,i)=>{
-      const xs=[W-14,W-45,W-80,W-115,24];
-      doc.text(h,xs[i],y+4.8,{align:i<4?'right':'left'});
-    });
-    y+=7;
-    curRows.forEach(({code,c,d})=>{
-      newPageIfNeeded(8);
-      const dec=code==='BTC'?6:code==='GOLD'?3:2;
-      const profitAED=d.profitToman/aedRate;
-      const pColor=d.profitToman>=0?GR:RD;
-      const even3=curRows.indexOf({code,c,d})%2===0;
-      doc.setFillColor(17,28,46);doc.rect(10,y,W-20,7,'F');
-      doc.setTextColor(...TX);doc.setFontSize(7);doc.setFont('helvetica','normal');
-      doc.text(c.name,W-14,y+4.8,{align:'right'});
-      doc.text(fN(d.inventory,dec)+' '+c.unit,W-45,y+4.8,{align:'right'});
-      doc.text(fN(d.avgBuy)+' ت',W-80,y+4.8,{align:'right'});
-      doc.text(fN(d.inventoryValue>0?d.inventoryValue:0)+' ت',W-115,y+4.8,{align:'right'});
-      doc.setTextColor(...pColor);
-      doc.text((d.profitToman>=0?'+ ':'- ')+fN(Math.abs(d.profitToman))+' ت',24,y+4.8,{align:'left'});
-      y+=7;
-    });
-    y+=5;
-  }
 
-  // ═══ ۵. خلاصه نهایی ═══
-  newPageIfNeeded(50);
-  sectionTitle('خلاصه نهایی',[38,215,130]);
-  if(recT.length) dataRow('سود کل TSETMC',(totalPLT>=0?'+ ':'- ')+fN(Math.abs(totalPLT))+' تومان',totalPLT>=0?GR:RD);
-  if(recD.length) dataRow('سود کل DFM',(totalPLD>=0?'+ ':'- ')+fN(Math.abs(totalPLD),2)+' درهم',totalPLD>=0?GR:RD);
-  dataRow('سود کل ارزها',(totalProfitToman>=0?'+ ':'- ')+fN(Math.abs(totalProfitToman))+' تومان',totalProfitToman>=0?GR:RD);
-  dataRow('ارزش کل داراییها',fN(Math.round(totalInventoryValue))+' تومان',TX);
-  dataRow('بازده کل',ret+'٪',parseFloat(ret)>=0?GR:RD);
+  const html=`<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+<head>
+<meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;700;900&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{
+  font-family:'Vazirmatn',Tahoma,Arial,sans-serif;
+  background:#ffffff;color:#1e293b;
+  width:794px;direction:rtl;
+}
+/* ── هدر ── */
+.header{
+  background:linear-gradient(135deg,#1e3a8a 0%,#2563eb 55%,#0ea5e9 100%);
+  color:#fff;padding:38px 44px 30px;
+  position:relative;overflow:hidden;
+}
+.header-circles::before{
+  content:'';position:absolute;top:-50px;left:-50px;
+  width:220px;height:220px;border-radius:50%;
+  background:rgba(255,255,255,0.06);pointer-events:none;
+}
+.header-circles::after{
+  content:'';position:absolute;bottom:-70px;right:-30px;
+  width:280px;height:280px;border-radius:50%;
+  background:rgba(255,255,255,0.04);pointer-events:none;
+}
+.logo{font-size:34px;font-weight:900;letter-spacing:4px;margin-bottom:3px;position:relative;z-index:1;}
+.logo span{color:#bfdbfe;}
+.by-line{font-size:11px;letter-spacing:2px;opacity:0.75;text-transform:uppercase;position:relative;z-index:1;}
+.report-title{
+  font-size:18px;font-weight:700;margin-top:10px;
+  color:#dbeafe;position:relative;z-index:1;
+}
+.date-info{font-size:11px;opacity:0.65;margin-top:5px;position:relative;z-index:1;}
+/* ── بدنه ── */
+.body{padding:28px 36px;}
+/* ── کارت‌های خلاصه ── */
+.summary-grid{
+  display:grid;grid-template-columns:repeat(3,1fr);
+  gap:14px;margin-bottom:30px;
+}
+.sum-card{
+  border-radius:14px;padding:20px 16px;text-align:center;
+  border:1.5px solid #e2e8f0;background:#f8fafc;
+}
+.sum-card.green{background:#f0fdf4;border-color:#86efac;}
+.sum-card.red{background:#fff1f2;border-color:#fca5a5;}
+.sum-card.blue{background:#eff6ff;border-color:#93c5fd;}
+.sum-label{font-size:10.5px;color:#64748b;margin-bottom:7px;font-weight:600;}
+.sum-value{font-size:18px;font-weight:900;line-height:1.1;}
+.sum-value.c-green{color:#15803d;}
+.sum-value.c-red{color:#b91c1c;}
+.sum-value.c-blue{color:#1d4ed8;}
+.sum-sub{font-size:10px;color:#94a3b8;margin-top:5px;}
+/* ── سکشن ── */
+.section{margin-bottom:28px;}
+.sec-header{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 14px;border-radius:10px;
+  margin-bottom:12px;
+}
+.sec-header.blue{background:#eff6ff;border-right:4px solid #2563eb;}
+.sec-header.yellow{background:#fefce8;border-right:4px solid #ca8a04;}
+.sec-header.green{background:#f0fdf4;border-right:4px solid #16a34a;}
+.sec-header.purple{background:#faf5ff;border-right:4px solid #7c3aed;}
+.sec-icon{font-size:18px;}
+.sec-title{font-size:13.5px;font-weight:800;color:#0f172a;}
+.sec-badge{
+  margin-right:auto;font-size:11px;font-weight:700;
+  padding:3px 11px;border-radius:20px;
+}
+.bg-green{background:#dcfce7;color:#15803d;}
+.bg-red{background:#fee2e2;color:#b91c1c;}
+/* ── جدول ── */
+table{width:100%;border-collapse:collapse;font-size:11px;border-radius:10px;overflow:hidden;}
+thead tr{background:#f1f5f9;}
+thead th{
+  padding:10px 13px;text-align:right;
+  font-weight:700;color:#475569;font-size:10.5px;
+}
+tbody tr{border-bottom:1px solid #f1f5f9;}
+tbody tr:nth-child(even){background:#fafafa;}
+tbody td{padding:9px 13px;color:#334155;}
+.td-green{color:#15803d;font-weight:700;}
+.td-red{color:#b91c1c;font-weight:700;}
+.td-bold{font-weight:700;color:#0f172a;}
+/* ── چیپ ── */
+.chip{
+  display:inline-block;padding:2px 9px;border-radius:20px;
+  font-size:10px;font-weight:700;
+}
+.chip-blue{background:#dbeafe;color:#1d4ed8;}
+/* ── فوتر ── */
+.footer{
+  background:#f8fafc;border-top:2px solid #e2e8f0;
+  padding:14px 36px;display:flex;
+  justify-content:space-between;align-items:center;
+  font-size:10px;color:#94a3b8;margin-top:10px;
+}
+.footer strong{color:#475569;}
+</style>
+</head>
+<body>
+<div class="header header-circles">
+  <div class="logo">WHAL<span>IXIR</span></div>
+  <div class="by-line">BY SHAMSADDIN MOLLAEI</div>
+  <div class="report-title">گزارش جامع مالی</div>
+  <div class="date-info">تاریخ: ${toJalali(now)} &nbsp;|&nbsp; ساعت: ${now.toLocaleTimeString('fa-IR')}</div>
+</div>
 
-  // ── فوتر تمام صفحات ──
-  const totalPages=doc.getNumberOfPages();
-  for(let p=1;p<=totalPages;p++){
-    doc.setPage(p);
-    doc.setFillColor(...HDR);doc.rect(0,H-11,W,11,'F');
-    doc.setFillColor(...BL);doc.rect(0,H-11,W,1,'F');
-    doc.setTextColor(...TX2);doc.setFontSize(7);
-    doc.text('WHALIXIR  —  گزارش محرمانه  —  '+toJalali(now),W/2,H-4,{align:'center'});
-    doc.text(p+'/'+totalPages,W-12,H-4,{align:'right'});
+<div class="body">
+
+<!-- خلاصه -->
+<div class="summary-grid">
+  <div class="sum-card ${totalProfitToman>=0?'green':'red'}">
+    <div class="sum-label">سود / زیان کل</div>
+    <div class="sum-value ${totalProfitToman>=0?'c-green':'c-red'}">${plSign(totalProfitToman)}${fN(Math.abs(totalProfitToman))}</div>
+    <div class="sum-sub">تومان</div>
+  </div>
+  <div class="sum-card blue">
+    <div class="sum-label">ارزش کل دارایی‌ها</div>
+    <div class="sum-value c-blue">${fN(Math.round(totalInventoryValue))}</div>
+    <div class="sum-sub">تومان</div>
+  </div>
+  <div class="sum-card ${parseFloat(ret)>=0?'green':'red'}">
+    <div class="sum-label">بازدهی کل</div>
+    <div class="sum-value ${parseFloat(ret)>=0?'c-green':'c-red'}">${ret}٪</div>
+    <div class="sum-sub">کل سرمایه: ${fN(Math.round(totalBuy))}</div>
+  </div>
+</div>
+
+${recT.length?`
+<div class="section">
+  <div class="sec-header blue">
+    <span class="sec-icon">📈</span>
+    <span class="sec-title">بورس تهران — TSETMC</span>
+    <span class="sec-badge ${totalPLT>=0?'bg-green':'bg-red'}">${plSign(totalPLT)}${fN(Math.abs(totalPLT))} تومان</span>
+  </div>
+  <table>
+    <thead><tr>
+      <th>تاریخ</th><th>ارزش پرتفوی (تومان)</th><th>واریز</th><th>برداشت</th><th>سود / زیان</th>
+    </tr></thead>
+    <tbody>
+      ${[...recT].slice(-10).map(r=>`<tr>
+        <td>${toJalaliShort(r.date)}</td>
+        <td class="td-bold">${fN(r.portfolio)}</td>
+        <td>${r.deposit?fN(r.deposit):'-'}</td>
+        <td>${r.withdraw?fN(r.withdraw):'-'}</td>
+        <td class="${r.pl>=0?'td-green':'td-red'}">${plSign(r.pl)}${fN(Math.abs(r.pl))}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>
+</div>`:''}
+
+${recD.length?`
+<div class="section">
+  <div class="sec-header yellow">
+    <span class="sec-icon">🏦</span>
+    <span class="sec-title">بورس دبی — DFM</span>
+    <span class="sec-badge ${totalPLD>=0?'bg-green':'bg-red'}">${plSign(totalPLD)}${fN(Math.abs(totalPLD),2)} درهم</span>
+  </div>
+  <table>
+    <thead><tr>
+      <th>تاریخ</th><th>ارزش پرتفوی (درهم)</th><th>واریز</th><th>برداشت</th><th>سود / زیان</th>
+    </tr></thead>
+    <tbody>
+      ${[...recD].slice(-10).map(r=>`<tr>
+        <td>${toJalaliShort(r.date)}</td>
+        <td class="td-bold">${fN(r.portfolio,2)}</td>
+        <td>${r.deposit?fN(r.deposit,2):'-'}</td>
+        <td>${r.withdraw?fN(r.withdraw,2):'-'}</td>
+        <td class="${r.pl>=0?'td-green':'td-red'}">${plSign(r.pl)}${fN(Math.abs(r.pl),2)}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>
+</div>`:''}
+
+${curRows.length?`
+<div class="section">
+  <div class="sec-header green">
+    <span class="sec-icon">💱</span>
+    <span class="sec-title">پرتفوی ارزها</span>
+  </div>
+  <table>
+    <thead><tr>
+      <th>ارز</th><th>موجودی</th><th>میانگین خرید (تومان)</th><th>ارزش فعلی (تومان)</th><th>سود / زیان</th>
+    </tr></thead>
+    <tbody>
+      ${curRows.map(({code,c,d})=>{
+        const dec=code==='BTC'?6:code==='GOLD'?3:2;
+        return`<tr>
+          <td><span class="chip chip-blue">${c.name}</span></td>
+          <td>${fN(d.inventory,dec)} ${c.unit}</td>
+          <td>${fN(d.avgBuy)}</td>
+          <td>${fN(d.inventoryValue>0?d.inventoryValue:0)}</td>
+          <td class="${d.profitToman>=0?'td-green':'td-red'}">${plSign(d.profitToman)}${fN(Math.abs(d.profitToman))}</td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>
+</div>`:''}
+
+<!-- خلاصه نهایی -->
+<div class="section">
+  <div class="sec-header purple">
+    <span class="sec-icon">✅</span>
+    <span class="sec-title">خلاصه نهایی</span>
+  </div>
+  <div class="summary-grid">
+    ${recT.length?`<div class="sum-card ${totalPLT>=0?'green':'red'}">
+      <div class="sum-label">سود TSETMC</div>
+      <div class="sum-value ${totalPLT>=0?'c-green':'c-red'}">${plSign(totalPLT)}${fN(Math.abs(totalPLT))}</div>
+      <div class="sum-sub">تومان</div>
+    </div>`:''}
+    ${recD.length?`<div class="sum-card ${totalPLD>=0?'green':'red'}">
+      <div class="sum-label">سود DFM</div>
+      <div class="sum-value ${totalPLD>=0?'c-green':'c-red'}">${plSign(totalPLD)}${fN(Math.abs(totalPLD),2)}</div>
+      <div class="sum-sub">درهم</div>
+    </div>`:''}
+    <div class="sum-card ${totalProfitAED>=0?'green':'red'}">
+      <div class="sum-label">سود ارزها (درهم)</div>
+      <div class="sum-value ${totalProfitAED>=0?'c-green':'c-red'}">${plSign(totalProfitAED)}${fN(Math.abs(totalProfitAED),2)}</div>
+      <div class="sum-sub">درهم</div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<div class="footer">
+  <span>WHALIXIR — گزارش محرمانه</span>
+  <span>${toJalali(now)}</span>
+  <strong>BY SHAMSADDIN MOLLAEI</strong>
+</div>
+</body></html>`;
+
+  // رندر HTML به Canvas
+  const container=document.createElement('div');
+  container.style.cssText='position:fixed;top:-99999px;left:-99999px;width:794px;z-index:-1;';
+  container.innerHTML=html;
+  document.body.appendChild(container);
+
+  // صبر برای لود فونت Vazirmatn
+  await document.fonts.ready;
+  await new Promise(r=>setTimeout(r,800));
+
+  const canvas=await html2canvas(container,{
+    scale:2,
+    useCORS:true,
+    allowTaint:true,
+    backgroundColor:'#ffffff',
+    width:794,
+    logging:false,
+    onclone:(doc)=>{
+      // اطمینان از لود فونت در clone
+      const link=doc.createElement('link');
+      link.href='https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;700;900&display=swap';
+      link.rel='stylesheet';
+      doc.head.appendChild(link);
+    }
+  });
+
+  document.body.removeChild(container);
+
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  const W=210, pageH=297;
+  const imgData=canvas.toDataURL('image/jpeg',0.97);
+  const imgH=(canvas.height/canvas.width)*W;
+
+  let posY=0;
+  while(posY<imgH){
+    if(posY>0) doc.addPage();
+    doc.addImage(imgData,'JPEG',0,-posY,W,imgH);
+    posY+=pageH;
   }
 
   doc.save('whalixir-'+now.toISOString().slice(0,10)+'.pdf');
