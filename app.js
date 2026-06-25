@@ -299,11 +299,14 @@ async function loadAPI(){
     const txt=document.getElementById('wx-ptr-txt');
     if(txt) txt.style.opacity='0';
     if(h>=THRESHOLD){
-      toast('🔄 در حال بروزرسانی...','');
-      await loadAPI();
-      await fetchTgjuRates(false);
-      toast('✅ بروز شد','ok');
-    }
+  toast('🔄 در حال بروزرسانی...','');
+  await loadAPI();
+  await fetchTgjuRates(false);
+  await boursLoadAPI();
+  const boursTab=document.getElementById('tab-bours');
+  if(boursTab&&boursTab.classList.contains('active')) renderBours();
+  toast('✅ بروز شد','ok');
+}
   });
 })();
   try{
