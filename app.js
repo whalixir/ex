@@ -1344,16 +1344,6 @@ async function boursLoadAPI() {
 // ══════════════════════════════════════════════════════════════════
 // PDF — گزارش کامل
 // ══════════════════════════════════════════════════════════════════
-function injectPDFButton(){
-  if(document.getElementById('wxPdfBtn')) return;
-  const dash=document.getElementById('tab-dashboard');if(!dash) return;
-  const btn=document.createElement('button');
-  btn.id='wxPdfBtn';btn.className='wx-pdf-btn';
-  btn.innerHTML='📄 دانلود گزارش PDF';
-  btn.onclick=()=>{playClick();generatePDF();};
-  dash.prepend(btn);
-}
-
 async function generatePDF(){
   toast('در حال ساخت گزارش...','');
 
@@ -1667,6 +1657,9 @@ ${curRows.length?`
     posY+=pageH;
   }
 
+  doc.save('whalixir-'+now.toISOString().slice(0,10)+'.pdf');
+  toast('✅ گزارش PDF دانلود شد','ok');
+}
 
   // بارگذاری داده بورس
   await boursLoadAPI();
@@ -1854,9 +1847,9 @@ ${curRows.length?`
     doc.setTextColor(...TX2);doc.setFontSize(7);
     doc.text('WHALIXIR  —  گزارش محرمانه  —  '+toJalali(now),W/2,H-4,{align:'center'});
     doc.text(p+'/'+totalPages,W-12,H-4,{align:'right'});
-      doc.save('whalixir-'+now.toISOString().slice(0,10)+'.pdf');
-  toast('✅ گزارش PDF دانلود شد','ok');
-}
   }
 
+  doc.save('whalixir-'+now.toISOString().slice(0,10)+'.pdf');
+  toast('✅ گزارش PDF دانلود شد','ok');
+}
 })();
