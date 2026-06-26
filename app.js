@@ -241,7 +241,7 @@ function tab(id){
   document.querySelectorAll('.ts').forEach(s=>s.classList.toggle('active',s.id==='tab-'+id));
   const main=document.querySelector('.am');
   if(main) main.scrollTop=0;
-  if(id==='chart') setTimeout(renderChart,100);
+  if(id==='chart') setTimeout(()=>renderChart(),100);
   if(id==='bours') setTimeout(renderBours,80);
 }
 document.querySelectorAll('.nb,.vab,.mob-nav-btn').forEach(b=>b.onclick=()=>tab(b.dataset.tab));
@@ -315,6 +315,8 @@ async function loadAPI(){
     txs=t.map(x=>({...x,savedRate:x.saved_rate||x.rate}));
     localStorage.setItem('wx_rates',JSON.stringify(rates));
     localStorage.setItem('wx_tx',JSON.stringify(txs));
+    // ذخیره snapshot روزانه سود واقعی
+    saveProfitSnapshot().catch(()=>{});
     render();
   }catch(_){}
 }
@@ -394,31 +396,54 @@ function calcAll(){
   return{result,totalProfitToman,totalProfitAED:totalProfitToman/aedRate,totalInventoryValue,totalBuy};
 }
 
-// ── دادههای ماهانه/روزانه — سود واقعی (ارزش موجودی) ──────────────
-function monthlyData(){
-  // گروهبندی تراکنشها بر اساس ماه
-  const months={};
-  for(const tx of txs){
-    const d=new Date(tx.ts);
-    const key=d.getFullYear()+'-'+(d.getMonth()+1).toString().padStart(2,'0');
-    if(!months[key]) months[key]={buyToman:0,sellToman:0};
-    if(tx.type==='buy') months[key].buyToman+=tx.total;
-    else months[key].sellToman+=tx.total;
+// ── Snapshot سود/زیان — ذخیره روزانه برای نمودار واقعی ──────────
+let _snapshots=[]; // کش snapshots
+
+async function saveProfitSnapshot(){
+  // یک بار در روز snapshot از سود واقعی (شامل ارزش موجودی) ذخیره می‌کنیم
+  try{
+    const today=new Date().toISOString().slice(0,10);
+    const{totalProfitToman,totalProfitAED}=calcAll();
+    await api('/snapshots',{
+      method:'POST',
+      body:JSON.stringify({date:today,profit_toman:totalProfitToman,profit_aed:totalProfitAED})
+    });
+    // کش رو پاک کن تا دفعه بعد دوباره لود بشه
+    _snapshots=null;
+  }catch(_){}
+}
+
+async function loadSnapshots(){
+  if(_snapshots) return _snapshots;
+  try{
+    const data=await api('/snapshots');
+    _snapshots=Array.isArray(data)?data:(data.results||[]);
+    return _snapshots;
+  }catch(_){return [];}
+}
+
+// ── نمودار روزانه از Snapshot — نشان‌دهنده افت و خیز واقعی ────────
+async function dailyData(){
+  const snaps=await loadSnapshots();
+  if(!snaps.length){
+    // اگه snapshot نداریم، از تراکنش‌ها تخمین می‌زنیم (fallback)
+    return _dailyFromTxs();
   }
-  const sorted=Object.entries(months).sort((a,b)=>a[0].localeCompare(b[0]));
+  const sorted=snaps
+    .slice().sort((a,b)=>a.date.localeCompare(b.date))
+    .slice(-30); // ۳۰ روز اخیر
   const labels=[],profitToman=[],profitAED=[];
-  const aedRate=rates['AED']||1;
-  for(const [key,v] of sorted){
-    const [yr,mo]=key.split('-');
-    labels.push(jalaliMonth(parseInt(yr),parseInt(mo)));
-    const p=v.sellToman-v.buyToman;
-    profitToman.push(Math.round(p));
-    profitAED.push(parseFloat((p/aedRate).toFixed(2)));
+  for(const s of sorted){
+    const dt=new Date(s.date+'T00:00:00');
+    labels.push(dt.toLocaleDateString('fa-IR',{month:'short',day:'numeric'}));
+    profitToman.push(Math.round(s.profit_toman));
+    profitAED.push(parseFloat((+s.profit_aed).toFixed(2)));
   }
   return{labels,profitToman,profitAED};
 }
 
-function dailyData(){
+// fallback: اگه snapshot موجود نبود از تراکنش حساب می‌کنیم
+function _dailyFromTxs(){
   const days={};
   for(const tx of txs){
     const d=new Date(tx.ts);
@@ -427,40 +452,72 @@ function dailyData(){
     if(tx.type==='buy') days[key].buyToman+=tx.total;
     else days[key].sellToman+=tx.total;
   }
-
-  const sorted=Object.entries(days).sort((a,b)=>a[0].localeCompare(b[0])).slice(-14);
-  const labels=[],profitToman=[],profitAED=[];
-  const aedRate=rates['AED']||1;
-
-  // ── سود تجمعی روزانه (نه سود هر روز به تنهایی) ──
-  // ابتدا سود انباشته تا قبل از ۱۴ روز اخیر را حساب می‌کنیم
   const allSorted=Object.entries(days).sort((a,b)=>a[0].localeCompare(b[0]));
-  const cutoffKey=sorted.length ? sorted[0][0] : '';
+  const sorted=allSorted.slice(-30);
+  const cutoffKey=sorted.length?sorted[0][0]:'';
   let baseCum=0;
-  for(const [key,v] of allSorted){
-    if(key >= cutoffKey) break;
-    baseCum+=v.sellToman-v.buyToman;
-  }
-
-  const {totalProfitToman,totalProfitAED}=calcAll();
-
+  for(const [key,v] of allSorted){if(key>=cutoffKey) break;baseCum+=v.sellToman-v.buyToman;}
+  const{totalProfitToman,totalProfitAED}=calcAll();
+  const aedRate=rates['AED']||1;
+  const labels=[],profitToman=[],profitAED=[];
   let cumT=baseCum;
   for(let i=0;i<sorted.length;i++){
-    const [,v]=sorted[i];
+    const[,v]=sorted[i];
     const dt=new Date(v.ts);
     labels.push(dt.toLocaleDateString('fa-IR',{month:'short',day:'numeric'}));
     cumT+=v.sellToman-v.buyToman;
-
-    if(i===sorted.length-1){
-      // آخرین نقطه = سود واقعی کل داشبورد (شامل ارزش موجودی)
-      profitToman.push(Math.round(totalProfitToman));
-      profitAED.push(parseFloat(totalProfitAED.toFixed(2)));
-    } else {
-      profitToman.push(Math.round(cumT));
-      profitAED.push(parseFloat((cumT/aedRate).toFixed(2)));
-    }
+    if(i===sorted.length-1){profitToman.push(Math.round(totalProfitToman));profitAED.push(parseFloat(totalProfitAED.toFixed(2)));}
+    else{profitToman.push(Math.round(cumT));profitAED.push(parseFloat((cumT/aedRate).toFixed(2)));}
   }
+  return{labels,profitToman,profitAED};
+}
 
+// ── نمودار ماهانه از Snapshot — آخرین snapshot هر ماه ─────────────
+async function monthlyData(){
+  const snaps=await loadSnapshots();
+  if(!snaps.length){
+    return _monthlyFromTxs();
+  }
+  // آخرین snapshot هر ماه
+  const months={};
+  for(const s of snaps){
+    const key=s.date.slice(0,7); // YYYY-MM
+    if(!months[key]||s.date>months[key].date) months[key]=s;
+  }
+  const sorted=Object.entries(months).sort((a,b)=>a[0].localeCompare(b[0]));
+  const labels=[],profitToman=[],profitAED=[];
+  for(const[key,s] of sorted){
+    const[yr,mo]=key.split('-');
+    labels.push(jalaliMonth(parseInt(yr),parseInt(mo)));
+    profitToman.push(Math.round(s.profit_toman));
+    profitAED.push(parseFloat((+s.profit_aed).toFixed(2)));
+  }
+  return{labels,profitToman,profitAED};
+}
+
+// fallback ماهانه از تراکنش‌ها
+function _monthlyFromTxs(){
+  const months={};
+  for(const tx of txs){
+    const d=new Date(tx.ts);
+    const key=d.getFullYear()+'-'+(d.getMonth()+1).toString().padStart(2,'0');
+    if(!months[key]) months[key]={buyToman:0,sellToman:0};
+    if(tx.type==='buy') months[key].buyToman+=tx.total;
+    else months[key].sellToman+=tx.total;
+  }
+  const allSorted=Object.entries(months).sort((a,b)=>a[0].localeCompare(b[0]));
+  const aedRate=rates['AED']||1;
+  const labels=[],profitToman=[],profitAED=[];
+  let cumT=0;
+  const{totalProfitToman,totalProfitAED}=calcAll();
+  for(let i=0;i<allSorted.length;i++){
+    const[key,v]=allSorted[i];
+    const[yr,mo]=key.split('-');
+    labels.push(jalaliMonth(parseInt(yr),parseInt(mo)));
+    cumT+=v.sellToman-v.buyToman;
+    if(i===allSorted.length-1){profitToman.push(Math.round(totalProfitToman));profitAED.push(parseFloat(totalProfitAED.toFixed(2)));}
+    else{profitToman.push(Math.round(cumT));profitAED.push(parseFloat((cumT/aedRate).toFixed(2)));}
+  }
   return{labels,profitToman,profitAED};
 }
 
@@ -541,40 +598,7 @@ function renderInventory(){
 // ── CHART صفحه نمودار — سود/زیان واقعی تجمعی ────────────────────
 let chartPeriod='monthly';
 
-function calcCumulativePL(){
-  // محاسبه سود/زیان تجمعی واقعی بر اساس ارزش لحظهای
-  const aedRate=rates['AED']||1;
-  const{totalProfitToman,totalProfitAED}=calcAll();
-
-  // برای نمودار ماهانه: سود/زیان انباشته بر اساس تراکنشها
-  const months={};
-  for(const tx of txs){
-    const d=new Date(tx.ts);
-    const key=d.getFullYear()+'-'+(d.getMonth()+1).toString().padStart(2,'0');
-    if(!months[key]) months[key]={buyToman:0,sellToman:0};
-    if(tx.type==='buy') months[key].buyToman+=tx.total;
-    else months[key].sellToman+=tx.total;
-  }
-  const sorted=Object.entries(months).sort((a,b)=>a[0].localeCompare(b[0]));
-  const labels=[],plT=[],plA=[];
-  let cumT=0,cumA=0;
-  for(const [key,v] of sorted){
-    const [yr,mo]=key.split('-');
-    labels.push(jalaliMonth(parseInt(yr),parseInt(mo)));
-    cumT+=v.sellToman-v.buyToman;
-    cumA=cumT/aedRate;
-    plT.push(Math.round(cumT));
-    plA.push(parseFloat(cumA.toFixed(2)));
-  }
-  // آخرین نقطه را با سود واقعی جایگزین کن (شامل ارزش موجودی)
-  if(plT.length){
-    plT[plT.length-1]=Math.round(totalProfitToman);
-    plA[plA.length-1]=parseFloat(totalProfitAED.toFixed(2));
-  }
-  return{labels,plT,plA};
-}
-
-function renderChart(){
+async function renderChart(){
   const canvas=$('myChart');
   const isDark=document.body.classList.contains('dark');
   const gc=isDark?'rgba(255,255,255,.07)':'rgba(0,0,0,.07)';
@@ -585,11 +609,11 @@ function renderChart(){
 
   let labels,plT,plA;
   if(chartPeriod==='daily'){
-    const dd=dailyData();
+    const dd=await dailyData();
     labels=dd.labels;plT=dd.profitToman;plA=dd.profitAED;
   } else {
-    const cd=calcCumulativePL();
-    labels=cd.labels;plT=cd.plT;plA=cd.plA;
+    const cd=await monthlyData();
+    labels=cd.labels;plT=cd.profitToman;plA=cd.profitAED;
   }
 
   if(!labels.length){
