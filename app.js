@@ -437,8 +437,8 @@ async function dailyData(){
   for(const s of sorted){
     const dt=new Date(s.date+'T00:00:00');
     labels.push(dt.toLocaleDateString('fa-IR',{month:'short',day:'numeric'}));
-    profitToman.push(Math.round(s.profit_toman));
-    profitAED.push(parseFloat((+s.profit_aed).toFixed(2)));
+    profitToman.push(Math.round(+(s.profit_toman)||0));
+    profitAED.push(parseFloat((+(s.profit_aed)||0).toFixed(2)));
   }
   return{labels,profitToman,profitAED};
 }
@@ -713,49 +713,64 @@ async function renderChart(){
 // جدول profit_snapshots باید ستون aed_rate داشته باشه
 
 // ── تولید داده‌های نمودار شاخص درهم ─────────────────────────────
-let _indexGrowthRate=parseFloat(localStorage.getItem('wx_index_growth')||'0');
+let _indexGrowthRate=parseFloat(localStorage.getItem('wx_index_growth')||'0.05');
 
-function buildAedIndexData(snaps){
-  // خط ۱: نرخ AED روزانه (از snapshots — ستون aed_rate)
-  // اگه aed_rate نداشتیم، از rates['AED'] فعلی استفاده می‌کنیم
-  const aedLine=[];
-  const aedLabels=[];
+async function buildAedIndexData(){
+  const snaps=await loadSnapshots();
 
   // فیلتر ۱ سال اخیر
   const oneYearAgo=new Date();
   oneYearAgo.setFullYear(oneYearAgo.getFullYear()-1);
   const cutoff=oneYearAgo.toISOString().slice(0,10);
 
-  const filtered=snaps
-    .filter(s=>s.date>=cutoff)
+  // ── خط ۱: نرخ AED روزانه ──────────────────────────────────────
+  // اگه snapshot داریم از aed_rate بخون، وگرنه از aed_history
+  let aedPoints=[]; // [{date, rate}]
+
+  const filteredSnaps=snaps
+    .filter(s=>s.date>=cutoff && (+(s.aed_rate||0))>0)
     .sort((a,b)=>a.date.localeCompare(b.date));
 
-  // اگه snapshot نداشتیم، فقط نقطه امروز با نرخ فعلی
-  if(!filtered.length){
-    const today=new Date().toLocaleDateString('fa-IR',{month:'short',day:'numeric'});
-    aedLabels.push(today);
-    aedLine.push(rates['AED']||27500);
-  } else {
-    for(const s of filtered){
-      const dt=new Date(s.date+'T00:00:00');
-      aedLabels.push(dt.toLocaleDateString('fa-IR',{month:'short',day:'numeric'}));
-      // اگه aed_rate ذخیره شده بود استفاده کن، وگرنه نرخ فعلی
-      aedLine.push(+(s.aed_rate||rates['AED']||27500));
+  if(filteredSnaps.length){
+    for(const s of filteredSnaps){
+      aedPoints.push({date:s.date,rate:+(s.aed_rate)});
     }
-    // اطمینان از اینکه آخرین نقطه نرخ فعلی داره
-    if(filtered.length>0) aedLine[aedLine.length-1]=rates['AED']||aedLine[aedLine.length-1];
+    // آخرین نقطه = نرخ لحظه‌ای
+    aedPoints[aedPoints.length-1].rate=rates['AED']||aedPoints[aedPoints.length-1].rate;
+  } else {
+    // تلاش برای خواندن از aed_history
+    try{
+      const hist=await api('/aed/history');
+      const histArr=Array.isArray(hist)?hist:(hist.results||[]);
+      const filtH=histArr.filter(h=>h.date>=cutoff).sort((a,b)=>a.date.localeCompare(b.date));
+      for(const h of filtH) aedPoints.push({date:h.date,rate:+h.rate});
+    }catch(_){}
+    // اگه هنوز خالیه، فقط امروز
+    if(!aedPoints.length){
+      aedPoints.push({date:new Date().toISOString().slice(0,10),rate:rates['AED']||27500});
+    } else {
+      aedPoints[aedPoints.length-1].rate=rates['AED']||aedPoints[aedPoints.length-1].rate;
+    }
   }
 
-  // خط ۲: شاخص مرجع — از 40000 تومان شروع، رشد مرکب روزانه
-  const refLine=[];
-  const dailyRate=_indexGrowthRate/100; // نرخ روزانه
+  // ── خط ۲: شاخص مرجع — از 40,000 با رشد مرکب روزانه ──────────
+  // هم‌تعداد با aedPoints، از اولین تاریخ شروع می‌کنه
+  const dailyRate=_indexGrowthRate/100;
   let refVal=40000;
-  for(let i=0;i<aedLabels.length;i++){
+  const refLine=[];
+  for(let i=0;i<aedPoints.length;i++){
     refLine.push(Math.round(refVal));
     refVal=refVal*(1+dailyRate);
   }
 
-  return{labels:aedLabels,aedLine,refLine};
+  // ── لیبل‌ها ─────────────────────────────────────────────────────
+  const labels=aedPoints.map(p=>{
+    const dt=new Date(p.date+'T00:00:00');
+    return dt.toLocaleDateString('fa-IR',{month:'short',day:'numeric'});
+  });
+  const aedLine=aedPoints.map(p=>p.rate);
+
+  return{labels,aedLine,refLine};
 }
 
 async function renderAedIndexChart(){
@@ -765,8 +780,7 @@ async function renderAedIndexChart(){
   const tc=isDark?'#90aec9':'#2c5282';
   if(chartInstance) chartInstance.destroy();
 
-  const snaps=await loadSnapshots();
-  const{labels,aedLine,refLine}=buildAedIndexData(snaps);
+  const{labels,aedLine,refLine}=await buildAedIndexData();
 
   if(!labels.length){
     canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);
@@ -775,6 +789,7 @@ async function renderAedIndexChart(){
 
   const currentAED=rates['AED']||27500;
   const currentRef=refLine[refLine.length-1]||40000;
+  const hasRef=refLine.some(v=>v!==40000); // فقط اگه رشد واقعی داره نشون بده
 
   chartInstance=new Chart(canvas,{
     data:{
@@ -785,7 +800,7 @@ async function renderAedIndexChart(){
           label:'نرخ درهم (تومان)',
           data:aedLine,
           borderColor:'#4f8cff',
-          backgroundColor:'rgba(79,140,255,.08)',
+          backgroundColor:'rgba(79,140,255,.10)',
           borderWidth:2.5,
           pointRadius:aedLine.length>60?0:3,
           pointBackgroundColor:'#4f8cff',
@@ -794,13 +809,15 @@ async function renderAedIndexChart(){
         },
         {
           type:'line',
-          label:'شاخص مرجع (از ۴۰٬۰۰۰)',
+          label:`شاخص مرجع ۴۰٬۰۰۰ (+${_indexGrowthRate}٪/روز)`,
           data:refLine,
           borderColor:'#f5a623',
-          backgroundColor:'rgba(245,166,35,.06)',
-          borderWidth:2,borderDash:[6,3],
+          backgroundColor:'rgba(245,166,35,.05)',
+          borderWidth:hasRef?2:1.5,
+          borderDash:[6,4],
           pointRadius:0,
           tension:.1,fill:false,
+          hidden:!hasRef,
           yAxisID:'y',order:2
         }
       ]
@@ -819,12 +836,12 @@ async function renderAedIndexChart(){
             title:items=>'📅 '+items[0].label,
             label:ctx=>{
               const v=ctx.raw;
-              if(ctx.dataset.label.includes('درهم')) return '💱 نرخ درهم: '+fN(v)+' تومان';
-              return '📈 شاخص مرجع: '+fN(v)+' تومان';
+              if(ctx.dataset.label.includes('درهم')) return '💱 نرخ درهم: '+fN(Math.round(v))+' تومان';
+              return '📈 شاخص مرجع: '+fN(Math.round(v))+' تومان';
             },
-            afterBody:items=>[
+            afterBody:()=>[
               '─────────────────',
-              'درهم امروز: '+fN(currentAED)+' تومان',
+              'درهم الان: '+fN(currentAED)+' تومان',
               'شاخص مرجع: '+fN(currentRef)+' تومان',
               'رشد روزانه: '+_indexGrowthRate+'٪'
             ]
@@ -837,7 +854,7 @@ async function renderAedIndexChart(){
           position:'right',
           ticks:{color:'#4f8cff',font:{family:'Vazirmatn'},callback:v=>{
             if(v>=1000000) return fN(v/1000000,1)+'M';
-            if(v>=1000) return fN(v/1000,0)+'K';
+            if(v>=1000) return fN(v/1000,1)+'K';
             return fN(v);
           }},
           grid:{color:gc}
@@ -1217,7 +1234,15 @@ function enter(){
       $('app').classList.remove('hidden');
       loadLocal();
       loadAPI().then(()=>fetchTgjuRates(false));
-      if(!window._wxAutoRefresh) window._wxAutoRefresh=setInterval(()=>fetchTgjuRates(false),30000);
+      // هر ۱ ساعت یکبار — نرخ‌ها + snapshot + نمودار
+      if(!window._wxAutoRefresh) window._wxAutoRefresh=setInterval(async()=>{
+        await fetchTgjuRates(false);
+        await loadAPI();
+        _snapshots=null; // کش snapshots رو پاک کن
+        if(document.getElementById('tab-chart')&&document.getElementById('tab-chart').classList.contains('active')){
+          renderChart();
+        }
+      },3600000); // ۶۰ دقیقه
       initSounds();
       injectBoursUI();
       injectPDFButton();
