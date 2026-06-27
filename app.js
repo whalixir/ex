@@ -827,7 +827,8 @@ async function renderAedIndexChart(){
 
   const currentAED=rates['AED']||27500;
   const currentRef=refLine[refLine.length-1]||40000;
-  const hasRef=refLine.some(v=>v!==40000); // فقط اگه رشد واقعی داره نشون بده
+  // خط زرد همیشه نشون بده اگه داده داره
+  const hasRef=refLine.length>0;
 
   chartInstance=new Chart(canvas,{
     data:{
@@ -851,11 +852,10 @@ async function renderAedIndexChart(){
           data:refLine,
           borderColor:'#f5a623',
           backgroundColor:'rgba(245,166,35,.05)',
-          borderWidth:hasRef?2:1.5,
+          borderWidth:2,
           borderDash:[6,4],
           pointRadius:0,
           tension:.1,fill:false,
-          hidden:!hasRef,
           yAxisID:'y',order:2
         }
       ]
@@ -903,97 +903,137 @@ async function renderAedIndexChart(){
 }
 
 // ── UI: فیلد درصد رشد شاخص ───────────────────────────────────────
+// این UI بیرون از canvas — داخل tab-chart قرار می‌گیره
 function _ensureIndexUI(){
   if($('wxIndexUI')) return;
+
+  const canvas=$('myChart');
+  if(!canvas) return;
+
+  // پیدا کردن tab-chart یا والد chart container
+  // UI باید بیرون از canvas قرار بگیره
+  let mountPoint=null;
+  // اول سعی کن tab-chart رو پیدا کن
+  const tabChart=document.getElementById('tab-chart');
+  if(tabChart){
+    mountPoint=tabChart;
+  } else {
+    // اگه tab-chart نبود، والد والد canvas
+    mountPoint=canvas.parentNode&&canvas.parentNode.parentNode
+      ? canvas.parentNode.parentNode
+      : canvas.parentNode;
+  }
+
   const wrapper=document.createElement('div');
   wrapper.id='wxIndexUI';
-  wrapper.style.cssText='display:none;padding:10px 14px 4px;';
+  wrapper.style.cssText=[
+    'display:none',
+    'padding:10px 14px 8px',
+    'margin-top:8px',
+    'background:rgba(79,140,255,.06)',
+    'border-top:1px solid rgba(79,140,255,.2)',
+    'border-radius:10px',
+  ].join(';');
+
   wrapper.innerHTML=`
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-      <span style="font-size:.82rem;color:var(--tc,#90aec9);font-family:Vazirmatn">درصد رشد روزانه شاخص مرجع:</span>
-      <input id="wxIndexRate" type="number" step="0.01" min="0" max="5"
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;direction:rtl">
+      <span style="font-size:.82rem;color:#90aec9;font-family:Vazirmatn;white-space:nowrap">📈 رشد روزانه شاخص مرجع:</span>
+      <input id="wxIndexRate" type="number" step="0.01" min="0" max="10"
         value="${_indexGrowthRate}"
-        style="width:80px;padding:4px 8px;border-radius:6px;border:1px solid #4f8cff44;
-               background:#0c1a3a;color:#e0eaff;font-family:Vazirmatn;font-size:.85rem;text-align:center"/>
-      <span style="font-size:.82rem;color:#4f8cff">٪</span>
-      <button id="wxIndexSave" style="padding:4px 14px;border-radius:6px;background:#4f8cff;
-              color:#fff;border:none;cursor:pointer;font-family:Vazirmatn;font-size:.82rem">ثبت</button>
-      <span id="wxIndexMsg" style="font-size:.78rem;color:#26d782"></span>
+        style="width:72px;padding:5px 8px;border-radius:8px;border:1px solid #4f8cff55;
+               background:#0d1f3c;color:#e0eaff;font-family:Vazirmatn;font-size:.88rem;
+               text-align:center;outline:none"/>
+      <span style="font-size:.82rem;color:#4f8cff">٪ / روز</span>
+      <button id="wxIndexSave"
+        style="padding:5px 16px;border-radius:8px;background:#4f8cff;color:#fff;
+               border:none;cursor:pointer;font-family:Vazirmatn;font-size:.82rem;
+               font-weight:600;transition:opacity .2s">ثبت</button>
+      <span id="wxIndexMsg" style="font-size:.78rem;color:#26d782;font-family:Vazirmatn"></span>
+    </div>
+    <div style="font-size:.72rem;color:#5a7a9a;font-family:Vazirmatn;margin-top:4px;direction:rtl">
+      شروع از ۴۰٬۰۰۰ تومان — تغییر درصد از فردا اعمال می‌شه
     </div>`;
-  // بعد از canvas قرار بده
-  const canvas=$('myChart');
-  if(canvas&&canvas.parentNode) canvas.parentNode.appendChild(wrapper);
+
+  // اضافه کن بعد از canvas container — نه داخل نمودار
+  mountPoint.appendChild(wrapper);
 
   $('wxIndexSave').onclick=async()=>{
+    const btn=$('wxIndexSave');
     const v=parseFloat($('wxIndexRate').value)||0;
+    btn.disabled=true;btn.style.opacity='.6';
     _indexGrowthRate=v;
-    localStorage.setItem('wx_index_growth',v);
-    // ذخیره نرخ جدید در D1 برای فردا (امروز قبلاً ذخیره شده)
+    localStorage.setItem('wx_index_growth',String(v));
     await api('/ref-index/settings',{method:'PUT',body:JSON.stringify({growth_rate:v})}).catch(()=>{});
-    $('wxIndexMsg').textContent='✅ ثبت شد — از فردا اعمال می‌شه';
-    setTimeout(()=>{if($('wxIndexMsg'))$('wxIndexMsg').textContent='';},3000);
+    $('wxIndexMsg').textContent='✅ ثبت شد';
+    setTimeout(()=>{if($('wxIndexMsg'))$('wxIndexMsg').textContent='';},2500);
+    btn.disabled=false;btn.style.opacity='1';
     _refIndexCache=null;
-    renderAedIndexChart();
+    await renderAedIndexChart();
   };
 }
 
 // ── دکمه‌های نمودار ───────────────────────────────────────────────
 const chartDailyBtn=$('chartDaily'),chartMonthlyBtn=$('chartMonthly');
 
-// دکمه شاخص درهم رو به صورت dynamic اضافه می‌کنیم
 function _initChartButtons(){
   if(!chartDailyBtn||!chartMonthlyBtn) return;
+  // جلوگیری از اجرای مجدد
+  if($('chartIndex')) return;
+
   const parent=chartDailyBtn.parentNode;
 
-  // دکمه شاخص اگه نبود بساز
-  if(!$('chartIndex')){
-    const btn=document.createElement('button');
-    btn.id='chartIndex';
-    btn.textContent='شاخص درهم';
-    // همان استایل دکمه‌های موجود
-    btn.className=chartDailyBtn.className.replace(/\bactive\b/,'').trim();
-    btn.style.cssText=chartDailyBtn.style.cssText||'';
-    parent.appendChild(btn);
-    btn.onclick=()=>{
-      chartPeriod='index';
-      btn.classList.add('active');
-      chartDailyBtn.classList.remove('active');
-      chartMonthlyBtn.classList.remove('active');
-      _ensureIndexUI();
-      if($('wxIndexUI')) $('wxIndexUI').style.display='';
-      renderAedIndexChart();
-    };
-  }
+  // دکمه شاخص درهم
+  const idxBtn=document.createElement('button');
+  idxBtn.id='chartIndex';
+  idxBtn.textContent='شاخص درهم';
+  idxBtn.className=chartDailyBtn.className.replace(/active/g,'').trim();
+  if(chartDailyBtn.getAttribute('style'))
+    idxBtn.setAttribute('style',chartDailyBtn.getAttribute('style'));
+  parent.appendChild(idxBtn);
+
+  idxBtn.onclick=()=>{
+    chartPeriod='index';
+    idxBtn.classList.add('active');
+    chartDailyBtn.classList.remove('active');
+    chartMonthlyBtn.classList.remove('active');
+    // نمایش UI درصد
+    _ensureIndexUI();
+    const ui=$('wxIndexUI');
+    if(ui) ui.style.display='';
+    renderAedIndexChart();
+  };
 
   chartDailyBtn.onclick=()=>{
     chartPeriod='daily';
     chartDailyBtn.classList.add('active');
     chartMonthlyBtn.classList.remove('active');
-    if($('chartIndex')) $('chartIndex').classList.remove('active');
-    if($('wxIndexUI')) $('wxIndexUI').style.display='none';
+    idxBtn.classList.remove('active');
+    const ui=$('wxIndexUI');if(ui) ui.style.display='none';
     renderChart();
   };
+
   chartMonthlyBtn.onclick=()=>{
     chartPeriod='monthly';
     chartMonthlyBtn.classList.add('active');
     chartDailyBtn.classList.remove('active');
-    if($('chartIndex')) $('chartIndex').classList.remove('active');
-    if($('wxIndexUI')) $('wxIndexUI').style.display='none';
+    idxBtn.classList.remove('active');
+    const ui=$('wxIndexUI');if(ui) ui.style.display='none';
     renderChart();
   };
 }
 
-// اصلاح renderChart برای پشتیبانی از mode=index
+// اصلاح renderChart برای index mode
 const _origRenderChart=renderChart;
 renderChart=async function(){
   if(chartPeriod==='index'){await renderAedIndexChart();return;}
   await _origRenderChart();
 };
 
-// اجرای اولیه بعد از بارگذاری DOM
-document.addEventListener('DOMContentLoaded',()=>_initChartButtons(),{once:true});
-// یا اگه DOM آماده بود همین الان
-if(document.readyState!=='loading') setTimeout(_initChartButtons,200);
+// اجرا بعد از DOM آماده شدن
+if(document.readyState==='loading')
+  document.addEventListener('DOMContentLoaded',_initChartButtons,{once:true});
+else
+  setTimeout(_initChartButtons,0);
 
 // ── landscape fullscreen chart ─────────────────────────────────────
 (function initChartLandscape(){
