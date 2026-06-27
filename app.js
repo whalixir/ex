@@ -409,6 +409,8 @@ async function saveProfitSnapshot(){
       method:'POST',
       body:JSON.stringify({date:today,profit_toman:totalProfitToman,profit_aed:totalProfitAED,aed_rate})
     });
+    // ذخیره شاخص مرجع برای امروز
+    saveRefIndex().catch(()=>{});
     // کش رو پاک کن تا دفعه بعد دوباره لود بشه
     _snapshots=null;
   }catch(_){}
@@ -710,66 +712,102 @@ async function renderChart(){
 
 // ── شاخص درهم — ذخیره AED روزانه در snapshots ───────────────────
 // هر بار که saveProfitSnapshot صدا می‌زنیم، نرخ AED هم ذخیره می‌شه
-// جدول profit_snapshots باید ستون aed_rate داشته باشه
 
-// ── تولید داده‌های نمودار شاخص درهم ─────────────────────────────
+// ── شاخص مرجع — ذخیره روزانه در D1 ─────────────────────────────
+// هر روز: value = value_دیروز × (1 + درصد/100)
+// تغییر درصد فقط از فردا به بعد اثر دارد
 let _indexGrowthRate=parseFloat(localStorage.getItem('wx_index_growth')||'0.05');
+let _refIndexCache=null;
+
+async function loadRefIndex(){
+  if(_refIndexCache) return _refIndexCache;
+  try{
+    const data=await api('/ref-index');
+    _refIndexCache=Array.isArray(data)?data:(data.results||[]);
+    return _refIndexCache;
+  }catch(_){return [];}
+}
+
+async function saveRefIndex(){
+  const today=new Date().toISOString().slice(0,10);
+  // اگه امروز قبلاً ذخیره شده نادیده بگیر
+  try{
+    const ex=await api('/ref-index/'+today);
+    if(ex&&ex.date===today) return;
+  }catch(_){}
+  try{
+    const rows=await loadRefIndex();
+    const sorted=[...rows].sort((a,b)=>a.date.localeCompare(b.date));
+    const lastVal=sorted.length ? +(sorted[sorted.length-1].value) : 40000;
+    const newVal=Math.round(lastVal*(1+_indexGrowthRate/100)*100)/100;
+    await api('/ref-index',{
+      method:'POST',
+      body:JSON.stringify({date:today,value:newVal,growth_rate:_indexGrowthRate})
+    });
+    _refIndexCache=null;
+  }catch(_){}
+}
 
 async function buildAedIndexData(){
   const snaps=await loadSnapshots();
+  const refRows=await loadRefIndex();
 
-  // فیلتر ۱ سال اخیر
   const oneYearAgo=new Date();
   oneYearAgo.setFullYear(oneYearAgo.getFullYear()-1);
   const cutoff=oneYearAgo.toISOString().slice(0,10);
 
-  // ── خط ۱: نرخ AED روزانه ──────────────────────────────────────
-  // اگه snapshot داریم از aed_rate بخون، وگرنه از aed_history
-  let aedPoints=[]; // [{date, rate}]
-
+  // ── خط ۱: نرخ AED روزانه از snapshots ────────────────────────
+  let aedPoints=[];
   const filteredSnaps=snaps
     .filter(s=>s.date>=cutoff && (+(s.aed_rate||0))>0)
     .sort((a,b)=>a.date.localeCompare(b.date));
 
   if(filteredSnaps.length){
-    for(const s of filteredSnaps){
+    for(const s of filteredSnaps)
       aedPoints.push({date:s.date,rate:+(s.aed_rate)});
-    }
-    // آخرین نقطه = نرخ لحظه‌ای
     aedPoints[aedPoints.length-1].rate=rates['AED']||aedPoints[aedPoints.length-1].rate;
   } else {
-    // تلاش برای خواندن از aed_history
     try{
       const hist=await api('/aed/history');
       const histArr=Array.isArray(hist)?hist:(hist.results||[]);
       const filtH=histArr.filter(h=>h.date>=cutoff).sort((a,b)=>a.date.localeCompare(b.date));
       for(const h of filtH) aedPoints.push({date:h.date,rate:+h.rate});
     }catch(_){}
-    // اگه هنوز خالیه، فقط امروز
-    if(!aedPoints.length){
+    if(!aedPoints.length)
       aedPoints.push({date:new Date().toISOString().slice(0,10),rate:rates['AED']||27500});
-    } else {
+    else
       aedPoints[aedPoints.length-1].rate=rates['AED']||aedPoints[aedPoints.length-1].rate;
+  }
+
+  // ── خط ۲: شاخص مرجع از D1 ────────────────────────────────────
+  const refMap={};
+  for(const r of refRows) refMap[r.date]=+(r.value);
+  const hasSavedRef=Object.keys(refMap).length>0;
+
+  const refLine=[];
+  if(!hasSavedRef){
+    // bootstrap: هنوز ذخیره نشده، از ۴۰,۰۰۰ با درصد فعلی
+    let v=40000;
+    for(let i=0;i<aedPoints.length;i++){
+      refLine.push(Math.round(v));
+      v=v*(1+_indexGrowthRate/100);
+    }
+  } else {
+    // از D1 بخون — اگه روزی نبود از آخرین مقدار شناخته‌شده استفاده کن
+    let lastKnown=40000;
+    const refDates=Object.keys(refMap).sort();
+    if(refDates.length) lastKnown=refMap[refDates[0]];
+    for(const p of aedPoints){
+      if(refMap[p.date]!==undefined) lastKnown=refMap[p.date];
+      refLine.push(Math.round(lastKnown));
     }
   }
 
-  // ── خط ۲: شاخص مرجع — از 40,000 با رشد مرکب روزانه ──────────
-  // هم‌تعداد با aedPoints، از اولین تاریخ شروع می‌کنه
-  const dailyRate=_indexGrowthRate/100;
-  let refVal=40000;
-  const refLine=[];
-  for(let i=0;i<aedPoints.length;i++){
-    refLine.push(Math.round(refVal));
-    refVal=refVal*(1+dailyRate);
-  }
-
-  // ── لیبل‌ها ─────────────────────────────────────────────────────
   const labels=aedPoints.map(p=>{
     const dt=new Date(p.date+'T00:00:00');
     return dt.toLocaleDateString('fa-IR',{month:'short',day:'numeric'});
   });
   const aedLine=aedPoints.map(p=>p.rate);
-
   return{labels,aedLine,refLine};
 }
 
@@ -886,12 +924,15 @@ function _ensureIndexUI(){
   const canvas=$('myChart');
   if(canvas&&canvas.parentNode) canvas.parentNode.appendChild(wrapper);
 
-  $('wxIndexSave').onclick=()=>{
+  $('wxIndexSave').onclick=async()=>{
     const v=parseFloat($('wxIndexRate').value)||0;
     _indexGrowthRate=v;
     localStorage.setItem('wx_index_growth',v);
-    $('wxIndexMsg').textContent='✅ ثبت شد';
-    setTimeout(()=>{if($('wxIndexMsg'))$('wxIndexMsg').textContent='';},2000);
+    // ذخیره نرخ جدید در D1 برای فردا (امروز قبلاً ذخیره شده)
+    await api('/ref-index/settings',{method:'PUT',body:JSON.stringify({growth_rate:v})}).catch(()=>{});
+    $('wxIndexMsg').textContent='✅ ثبت شد — از فردا اعمال می‌شه';
+    setTimeout(()=>{if($('wxIndexMsg'))$('wxIndexMsg').textContent='';},3000);
+    _refIndexCache=null;
     renderAedIndexChart();
   };
 }
