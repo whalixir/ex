@@ -15,7 +15,7 @@ export async function onRequest(context) {
 
   // ── فقط مسیرهای API واقعی را handle کن ────────────────────────
   // مسیرهای مجاز: /api/transactions, /api/rates, /api/tgju, /api/bours, /api/aed
-  const validPaths = ['/api/transactions','/api/rates','/api/tgju','/api/bours','/api/aed','/api/debug'];
+  const validPaths = ['/api/transactions','/api/rates','/api/tgju','/api/bours','/api/aed','/api/debug','/api/snapshots'];
   const isValidAPI = validPaths.some(p => path === p || path.startsWith(p+'/'));
   if (!isValidAPI) {
     return context.next();
@@ -75,6 +75,13 @@ export async function onRequest(context) {
       DB.prepare(`CREATE TABLE IF NOT EXISTS aed_settings (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
+      )`),
+      // snapshot روزانه سود/زیان + نرخ درهم
+      DB.prepare(`CREATE TABLE IF NOT EXISTS profit_snapshots (
+        date TEXT PRIMARY KEY,
+        profit_toman REAL NOT NULL DEFAULT 0,
+        profit_aed REAL NOT NULL DEFAULT 0,
+        aed_rate REAL NOT NULL DEFAULT 0
       )`),
       // مقادیر پیش‌فرض نرخ‌ها
       DB.prepare(`INSERT OR IGNORE INTO rates VALUES ('USD',97500,0)`),
@@ -271,6 +278,41 @@ export async function onRequest(context) {
         ).bind(key, String(value)).run();
       }
       return json({ success:true });
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  PROFIT SNAPSHOTS — سود/زیان روزانه + نرخ درهم
+    // ══════════════════════════════════════════════════════════
+    if (path === '/api/snapshots' && request.method === 'GET') {
+      const { results } = await DB.prepare(
+        'SELECT * FROM profit_snapshots ORDER BY date ASC'
+      ).all();
+      return json(results);
+    }
+    if (path === '/api/snapshots' && request.method === 'POST') {
+      const b = await request.json();
+      // اضافه کردن ستون aed_rate اگه جدول قدیمی بود (migration ایمن)
+      try {
+        await DB.prepare('ALTER TABLE profit_snapshots ADD COLUMN aed_rate REAL DEFAULT 0').run();
+      } catch(_) { /* ستون از قبل وجود داره — نادیده بگیر */ }
+      await DB.prepare(
+        'INSERT INTO profit_snapshots (date,profit_toman,profit_aed,aed_rate) VALUES (?,?,?,?) ' +
+        'ON CONFLICT(date) DO UPDATE SET profit_toman=excluded.profit_toman, ' +
+        'profit_aed=excluded.profit_aed, aed_rate=excluded.aed_rate'
+      ).bind(
+        b.date,
+        parseFloat(b.profit_toman)||0,
+        parseFloat(b.profit_aed)||0,
+        parseFloat(b.aed_rate)||0
+      ).run();
+      // همزمان نرخ درهم رو در aed_history هم ذخیره کن
+      if (b.aed_rate && b.aed_rate > 0) {
+        await DB.prepare(
+          'INSERT INTO aed_history (date,rate,updated_at) VALUES (?,?,?) ' +
+          'ON CONFLICT(date) DO UPDATE SET rate=excluded.rate, updated_at=excluded.updated_at'
+        ).bind(b.date, parseFloat(b.aed_rate), Date.now()).run();
+      }
+      return json({ success:true }, 201);
     }
 
     // ── DEBUG: وضعیت DB ──────────────────────────────────────────
