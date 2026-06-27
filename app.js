@@ -325,7 +325,7 @@ async function loadAPI(){
 async function fetchTgjuRates(showStatus=true){
   const statusEl=$('rateFetchStatus'),tsEl=$('rateTs'),btn=$('rfb');
   if(btn){btn.disabled=true;btn.textContent='⏳ در حال دریافت...';}
-  if(showStatus) statusEl.innerHTML='<div class="rate-fetch-box"><div class="spin"></div><span>در حال دریافت نرخهای زنده از tgju.org ...</span></div>';
+  if(showStatus&&statusEl) statusEl.innerHTML='<div class="rate-fetch-box"><div class="spin"></div><span>در حال دریافت نرخهای زنده از tgju.org ...</span></div>';
   try{
     const r=await fetch('https://whalixir.pages.dev/api/tgju?_='+Date.now(),{cache:'no-store',headers:{'Accept':'application/json'}});
     if(!r.ok) throw new Error('خطای سرور: '+r.status);
@@ -342,28 +342,30 @@ async function fetchTgjuRates(showStatus=true){
     }
     if(updated>0){
       localStorage.setItem('wx_rates',JSON.stringify(rates));
+      // همیشه UI رو آپدیت کن
       renderLive();
       changed.forEach(code=>{
-        const card=$('rg').querySelector('.rc[data-c="'+code+'"]');
+        const card=$('rg')&&$('rg').querySelector('.rc[data-c="'+code+'"]');
         if(card){card.classList.add('rate-flash');setTimeout(()=>card.classList.remove('rate-flash'),1200);}
       });
       const now=new Date().toLocaleTimeString('fa-IR',{hour:'2-digit',minute:'2-digit'});
-      tsEl.textContent='آخرین بروزرسانی: '+now+(changed.length?(' | '+changed.length+' نرخ تغییر کرد'):' | بدون تغییر');
+      if(tsEl) tsEl.textContent='آخرین بروزرسانی: '+now+(changed.length?(' | '+changed.length+' نرخ تغییر کرد'):' | بدون تغییر');
       const errCount=(data._errors||[]).length,errMsg=errCount>0?' | '+errCount+' مورد دریافت نشد':'';
-      if(showStatus){
+      if(showStatus&&statusEl){
         statusEl.innerHTML='<div class="rate-fetch-box" style="border-color:var(--gr)">✅ <span style="color:var(--gr)">'+updated+' نرخ از tgju.org دریافت و بروز شد'+errMsg+'</span></div>';
-        setTimeout(()=>statusEl.innerHTML='',5000);
+        setTimeout(()=>{if(statusEl)statusEl.innerHTML='';},5000);
       }
       if(showStatus) toast('✅ '+updated+' نرخ بروز شد','ok');
     } else {
       throw new Error('هیچ نرخی دریافت نشد. '+(data._errors||[]).join(' | '));
     }
   }catch(err){
-    if(showStatus){
+    renderRates();
+    if(showStatus&&statusEl){
       statusEl.innerHTML='<div class="rate-fetch-box" style="border-color:var(--rd)">❌ <span style="color:var(--rd)">'+err.message+'</span></div>';
-      setTimeout(()=>statusEl.innerHTML='',7000);
+      setTimeout(()=>{if(statusEl)statusEl.innerHTML='';},7000);
     }
-    toast('خطا در دریافت نرخها','err');
+    if(showStatus) toast('خطا در دریافت نرخها','err');
   }finally{
     if(btn){btn.disabled=false;btn.textContent='🔄 بروزرسانی از tgju.org';}
   }
@@ -1315,15 +1317,16 @@ function enter(){
       $('app').classList.remove('hidden');
       loadLocal();
       loadAPI().then(()=>fetchTgjuRates(false));
-      // هر ۱ ساعت یکبار — نرخ‌ها + snapshot + نمودار
+      // هر ۳۰ ثانیه — نرخ‌های زنده
+      if(!window._wxRateRefresh) window._wxRateRefresh=setInterval(()=>fetchTgjuRates(false),30000);
+      // هر ۱ ساعت — snapshot + loadAPI + نمودار
       if(!window._wxAutoRefresh) window._wxAutoRefresh=setInterval(async()=>{
-        await fetchTgjuRates(false);
         await loadAPI();
-        _snapshots=null; // کش snapshots رو پاک کن
+        _snapshots=null;
         if(document.getElementById('tab-chart')&&document.getElementById('tab-chart').classList.contains('active')){
           renderChart();
         }
-      },3600000); // ۶۰ دقیقه
+      },3600000);
       initSounds();
       injectBoursUI();
       injectPDFButton();
