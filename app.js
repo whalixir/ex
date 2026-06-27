@@ -404,9 +404,10 @@ async function saveProfitSnapshot(){
   try{
     const today=new Date().toISOString().slice(0,10);
     const{totalProfitToman,totalProfitAED}=calcAll();
+    const aed_rate=rates['AED']||0;
     await api('/snapshots',{
       method:'POST',
-      body:JSON.stringify({date:today,profit_toman:totalProfitToman,profit_aed:totalProfitAED})
+      body:JSON.stringify({date:today,profit_toman:totalProfitToman,profit_aed:totalProfitAED,aed_rate})
     });
     // کش رو پاک کن تا دفعه بعد دوباره لود بشه
     _snapshots=null;
@@ -707,11 +708,234 @@ async function renderChart(){
   });
 }
 
-const chartDailyBtn=$('chartDaily'),chartMonthlyBtn=$('chartMonthly');
-if(chartDailyBtn&&chartMonthlyBtn){
-  chartDailyBtn.onclick=()=>{chartPeriod='daily';chartDailyBtn.classList.add('active');chartMonthlyBtn.classList.remove('active');renderChart();};
-  chartMonthlyBtn.onclick=()=>{chartPeriod='monthly';chartMonthlyBtn.classList.add('active');chartDailyBtn.classList.remove('active');renderChart();};
+// ── شاخص درهم — ذخیره AED روزانه در snapshots ───────────────────
+// هر بار که saveProfitSnapshot صدا می‌زنیم، نرخ AED هم ذخیره می‌شه
+// جدول profit_snapshots باید ستون aed_rate داشته باشه
+
+// ── تولید داده‌های نمودار شاخص درهم ─────────────────────────────
+let _indexGrowthRate=parseFloat(localStorage.getItem('wx_index_growth')||'0');
+
+function buildAedIndexData(snaps){
+  // خط ۱: نرخ AED روزانه (از snapshots — ستون aed_rate)
+  // اگه aed_rate نداشتیم، از rates['AED'] فعلی استفاده می‌کنیم
+  const aedLine=[];
+  const aedLabels=[];
+
+  // فیلتر ۱ سال اخیر
+  const oneYearAgo=new Date();
+  oneYearAgo.setFullYear(oneYearAgo.getFullYear()-1);
+  const cutoff=oneYearAgo.toISOString().slice(0,10);
+
+  const filtered=snaps
+    .filter(s=>s.date>=cutoff)
+    .sort((a,b)=>a.date.localeCompare(b.date));
+
+  // اگه snapshot نداشتیم، فقط نقطه امروز با نرخ فعلی
+  if(!filtered.length){
+    const today=new Date().toLocaleDateString('fa-IR',{month:'short',day:'numeric'});
+    aedLabels.push(today);
+    aedLine.push(rates['AED']||27500);
+  } else {
+    for(const s of filtered){
+      const dt=new Date(s.date+'T00:00:00');
+      aedLabels.push(dt.toLocaleDateString('fa-IR',{month:'short',day:'numeric'}));
+      // اگه aed_rate ذخیره شده بود استفاده کن، وگرنه نرخ فعلی
+      aedLine.push(+(s.aed_rate||rates['AED']||27500));
+    }
+    // اطمینان از اینکه آخرین نقطه نرخ فعلی داره
+    if(filtered.length>0) aedLine[aedLine.length-1]=rates['AED']||aedLine[aedLine.length-1];
+  }
+
+  // خط ۲: شاخص مرجع — از 40000 تومان شروع، رشد مرکب روزانه
+  const refLine=[];
+  const dailyRate=_indexGrowthRate/100; // نرخ روزانه
+  let refVal=40000;
+  for(let i=0;i<aedLabels.length;i++){
+    refLine.push(Math.round(refVal));
+    refVal=refVal*(1+dailyRate);
+  }
+
+  return{labels:aedLabels,aedLine,refLine};
 }
+
+async function renderAedIndexChart(){
+  const canvas=$('myChart');
+  const isDark=document.body.classList.contains('dark');
+  const gc=isDark?'rgba(255,255,255,.07)':'rgba(0,0,0,.07)';
+  const tc=isDark?'#90aec9':'#2c5282';
+  if(chartInstance) chartInstance.destroy();
+
+  const snaps=await loadSnapshots();
+  const{labels,aedLine,refLine}=buildAedIndexData(snaps);
+
+  if(!labels.length){
+    canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);
+    return;
+  }
+
+  const currentAED=rates['AED']||27500;
+  const currentRef=refLine[refLine.length-1]||40000;
+
+  chartInstance=new Chart(canvas,{
+    data:{
+      labels,
+      datasets:[
+        {
+          type:'line',
+          label:'نرخ درهم (تومان)',
+          data:aedLine,
+          borderColor:'#4f8cff',
+          backgroundColor:'rgba(79,140,255,.08)',
+          borderWidth:2.5,
+          pointRadius:aedLine.length>60?0:3,
+          pointBackgroundColor:'#4f8cff',
+          tension:.3,fill:true,
+          yAxisID:'y',order:1
+        },
+        {
+          type:'line',
+          label:'شاخص مرجع (از ۴۰٬۰۰۰)',
+          data:refLine,
+          borderColor:'#f5a623',
+          backgroundColor:'rgba(245,166,35,.06)',
+          borderWidth:2,borderDash:[6,3],
+          pointRadius:0,
+          tension:.1,fill:false,
+          yAxisID:'y',order:2
+        }
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{
+        legend:{
+          display:true,
+          labels:{color:tc,font:{family:'Vazirmatn',size:11},usePointStyle:true,pointStyleWidth:10}
+        },
+        tooltip:{
+          rtl:true,
+          callbacks:{
+            title:items=>'📅 '+items[0].label,
+            label:ctx=>{
+              const v=ctx.raw;
+              if(ctx.dataset.label.includes('درهم')) return '💱 نرخ درهم: '+fN(v)+' تومان';
+              return '📈 شاخص مرجع: '+fN(v)+' تومان';
+            },
+            afterBody:items=>[
+              '─────────────────',
+              'درهم امروز: '+fN(currentAED)+' تومان',
+              'شاخص مرجع: '+fN(currentRef)+' تومان',
+              'رشد روزانه: '+_indexGrowthRate+'٪'
+            ]
+          }
+        }
+      },
+      scales:{
+        x:{ticks:{color:tc,font:{family:'Vazirmatn'},maxTicksLimit:12},grid:{color:gc}},
+        y:{
+          position:'right',
+          ticks:{color:'#4f8cff',font:{family:'Vazirmatn'},callback:v=>{
+            if(v>=1000000) return fN(v/1000000,1)+'M';
+            if(v>=1000) return fN(v/1000,0)+'K';
+            return fN(v);
+          }},
+          grid:{color:gc}
+        }
+      }
+    }
+  });
+}
+
+// ── UI: فیلد درصد رشد شاخص ───────────────────────────────────────
+function _ensureIndexUI(){
+  if($('wxIndexUI')) return;
+  const wrapper=document.createElement('div');
+  wrapper.id='wxIndexUI';
+  wrapper.style.cssText='display:none;padding:10px 14px 4px;';
+  wrapper.innerHTML=`
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span style="font-size:.82rem;color:var(--tc,#90aec9);font-family:Vazirmatn">درصد رشد روزانه شاخص مرجع:</span>
+      <input id="wxIndexRate" type="number" step="0.01" min="0" max="5"
+        value="${_indexGrowthRate}"
+        style="width:80px;padding:4px 8px;border-radius:6px;border:1px solid #4f8cff44;
+               background:#0c1a3a;color:#e0eaff;font-family:Vazirmatn;font-size:.85rem;text-align:center"/>
+      <span style="font-size:.82rem;color:#4f8cff">٪</span>
+      <button id="wxIndexSave" style="padding:4px 14px;border-radius:6px;background:#4f8cff;
+              color:#fff;border:none;cursor:pointer;font-family:Vazirmatn;font-size:.82rem">ثبت</button>
+      <span id="wxIndexMsg" style="font-size:.78rem;color:#26d782"></span>
+    </div>`;
+  // بعد از canvas قرار بده
+  const canvas=$('myChart');
+  if(canvas&&canvas.parentNode) canvas.parentNode.appendChild(wrapper);
+
+  $('wxIndexSave').onclick=()=>{
+    const v=parseFloat($('wxIndexRate').value)||0;
+    _indexGrowthRate=v;
+    localStorage.setItem('wx_index_growth',v);
+    $('wxIndexMsg').textContent='✅ ثبت شد';
+    setTimeout(()=>{if($('wxIndexMsg'))$('wxIndexMsg').textContent='';},2000);
+    renderAedIndexChart();
+  };
+}
+
+// ── دکمه‌های نمودار ───────────────────────────────────────────────
+const chartDailyBtn=$('chartDaily'),chartMonthlyBtn=$('chartMonthly');
+
+// دکمه شاخص درهم رو به صورت dynamic اضافه می‌کنیم
+function _initChartButtons(){
+  if(!chartDailyBtn||!chartMonthlyBtn) return;
+  const parent=chartDailyBtn.parentNode;
+
+  // دکمه شاخص اگه نبود بساز
+  if(!$('chartIndex')){
+    const btn=document.createElement('button');
+    btn.id='chartIndex';
+    btn.textContent='شاخص درهم';
+    // همان استایل دکمه‌های موجود
+    btn.className=chartDailyBtn.className.replace(/\bactive\b/,'').trim();
+    btn.style.cssText=chartDailyBtn.style.cssText||'';
+    parent.appendChild(btn);
+    btn.onclick=()=>{
+      chartPeriod='index';
+      btn.classList.add('active');
+      chartDailyBtn.classList.remove('active');
+      chartMonthlyBtn.classList.remove('active');
+      _ensureIndexUI();
+      if($('wxIndexUI')) $('wxIndexUI').style.display='';
+      renderAedIndexChart();
+    };
+  }
+
+  chartDailyBtn.onclick=()=>{
+    chartPeriod='daily';
+    chartDailyBtn.classList.add('active');
+    chartMonthlyBtn.classList.remove('active');
+    if($('chartIndex')) $('chartIndex').classList.remove('active');
+    if($('wxIndexUI')) $('wxIndexUI').style.display='none';
+    renderChart();
+  };
+  chartMonthlyBtn.onclick=()=>{
+    chartPeriod='monthly';
+    chartMonthlyBtn.classList.add('active');
+    chartDailyBtn.classList.remove('active');
+    if($('chartIndex')) $('chartIndex').classList.remove('active');
+    if($('wxIndexUI')) $('wxIndexUI').style.display='none';
+    renderChart();
+  };
+}
+
+// اصلاح renderChart برای پشتیبانی از mode=index
+const _origRenderChart=renderChart;
+renderChart=async function(){
+  if(chartPeriod==='index'){await renderAedIndexChart();return;}
+  await _origRenderChart();
+};
+
+// اجرای اولیه بعد از بارگذاری DOM
+document.addEventListener('DOMContentLoaded',()=>_initChartButtons(),{once:true});
+// یا اگه DOM آماده بود همین الان
+if(document.readyState!=='loading') setTimeout(_initChartButtons,200);
 
 // ── landscape fullscreen chart ─────────────────────────────────────
 (function initChartLandscape(){
