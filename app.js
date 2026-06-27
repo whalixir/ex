@@ -310,10 +310,9 @@ async function loadAPI(){
   });
 })();
   try{
-    const [r,t]=await Promise.all([api('/rates'),api('/transactions')]);
-    Object.assign(rates,r);
+    // فقط تراکنش‌ها از D1 — نرخ‌ها از TGJU می‌آن (fetchTgjuRates)
+    const t=await api('/transactions');
     txs=t.map(x=>({...x,savedRate:x.saved_rate||x.rate}));
-    localStorage.setItem('wx_rates',JSON.stringify(rates));
     localStorage.setItem('wx_tx',JSON.stringify(txs));
     // ذخیره snapshot روزانه سود واقعی
     saveProfitSnapshot().catch(()=>{});
